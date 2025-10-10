@@ -4,18 +4,27 @@ import { signOut } from "next-auth/react";
 import { Button } from "@budget/components/UI/Button";
 
 export default function SignOutButton() {
-  const [logOut, setLogOut] = useState("Sign Out");
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const signOutOfApp = () => {
-    signOut({ callbackUrl: "/" });
-    setLogOut("Signing out...");
+  const signOutOfApp = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut({ callbackUrl: "/" });
+    } catch (error) {
+      setIsSigningOut(false);
+      throw error;
+    }
   };
+
   return (
     <Button
-      className="w-full rounded-xl border px-4 py-2 hover:bg-gray-50"
+      variant="secondary"
+      size="md"
+      loading={isSigningOut}
+      loadingText="Signing out..."
       onClick={signOutOfApp}
     >
-      {logOut}
+      Sign Out
     </Button>
   );
 }
