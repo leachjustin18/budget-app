@@ -2,8 +2,21 @@
 import { useState } from "react";
 import { signOut } from "next-auth/react";
 import { Button } from "@budget/components/UI/Button";
+import type { ButtonProps } from "@budget/components/UI/Button";
 
-export default function SignOutButton() {
+type SignOutButtonProps = {
+  variant?: ButtonProps["variant"];
+  size?: ButtonProps["size"];
+  fullWidth?: boolean;
+  className?: string;
+};
+
+export default function SignOutButton({
+  variant = "secondary",
+  size = "md",
+  fullWidth,
+  className,
+}: SignOutButtonProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const signOutOfApp = async () => {
@@ -18,8 +31,10 @@ export default function SignOutButton() {
 
   return (
     <Button
-      variant="secondary"
-      size="md"
+      variant={variant}
+      size={size}
+      fullWidth={fullWidth}
+      className={className}
       loading={isSigningOut}
       loadingText="Signing out..."
       onClick={signOutOfApp}

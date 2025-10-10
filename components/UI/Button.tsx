@@ -5,10 +5,7 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
-
-const joinClassNames = (
-  ...classNames: Array<string | undefined | false>
-): string => classNames.filter(Boolean).join(" ");
+import { joinClassNames } from "@budget/lib/helpers";
 
 type Variant =
   | "primary"
