@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  Fragment,
-  useEffect,
-  useMemo,
-  useState,
-  type JSX,
-  type ReactNode,
-} from "react";
+import { Fragment, useMemo, type JSX, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -94,7 +87,7 @@ const navItems: NavItem[] = [
           />
           <path
             d="M8.25 7.5h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1 0-1.5m0 6.5H12a.75.75 0 0 1 0 1.5H8.25a.75.75 0 0 1 0-1.5"
-            fill="#f9fafb"
+            fill="#134e4a"
           />
         </svg>
       );
@@ -146,7 +139,7 @@ const navItems: NavItem[] = [
           />
           <path
             d="M9 7.25h6a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1 0-1.5m0 3h6a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1 0-1.5"
-            fill="#f8fafc"
+            fill="#134e4a"
           />
         </svg>
       );
@@ -172,7 +165,7 @@ const navItems: NavItem[] = [
           />
           <path
             d="M12 12.75a.75.75 0 0 1 .53.22l3.5 3.5a.75.75 0 1 1-1.06 1.06l-3.5-3.5A.75.75 0 0 1 12 12.75"
-            fill="#f5f9ff"
+            fill="#134e4a"
           />
           <circle cx="12" cy="12" r="1.75" fill="currentColor" />
         </svg>
@@ -229,22 +222,22 @@ export default function SecureLayoutShell({
     <div className="relative min-h-screen">
       <div className="pointer-events-none fixed inset-x-0 top-0 z-30 flex justify-center ">
         <header className="pointer-events-auto w-full transition-transform duration-300 ease-out">
-          <div className="relative overflow-hidden rounded-b-[30px] border border-white/12 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_4px_5px_rgba(8,13,25,0.6)] backdrop-blur-2xl">
+          <div className="relative overflow-hidden rounded-b-[30px] border border-emerald-800/15 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_8px_22px_rgba(15,118,110,0.2)] backdrop-blur-2xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18)" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(129,140,248,0.22)" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.24)" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.22)" />
               <div className="absolute inset-0 bg-gradient-to-br " />
             </div>
 
             <div className="relative flex items-center gap-4">
               <Menu as="div" className="relative">
-                <MenuButton className="flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-1.5 py-1 pr-3 text-left text-xs text-slate-200 shadow-[0_12px_30px_rgba(15,23,42,0.25)] backdrop-blur-sm transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60">
+                <MenuButton className="flex items-center gap-3 rounded-full border border-emerald-700/30 bg-white/90 px-1.5 py-1 pr-3 text-left text-xs text-emerald-900 shadow-[0_12px_30px_rgba(15,118,110,0.2)] backdrop-blur-sm transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60">
                   <UserAvatar user={user} />
                   <div className="hidden sm:block">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-200/90">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-700/80">
                       Signed in
                     </p>
-                    <p className="mt-0.5 text-xs font-medium text-white">
+                    <p className="mt-0.5 text-xs font-medium text-emerald-950">
                       {user?.name ?? user?.email ?? "Household"}
                     </p>
                   </div>
@@ -262,14 +255,12 @@ export default function SecureLayoutShell({
                   <MenuItems
                     portal
                     anchor={{ to: "bottom start", gap: 12 }}
-                    className="z-50 w-52 overflow-hidden rounded-2xl border border-white/12 bg-[#10172a]/95 shadow-[0_24px_55px_rgba(8,13,23,0.55)] backdrop-blur-xl focus:outline-none"
+                    className="z-50 w-52 overflow-hidden rounded-2xl border border-white/12 bg-[#CAEFD1]/95 shadow-[0_24px_55px_rgba(8,13,23,0.55)] backdrop-blur-xl focus:outline-none"
                   >
                     <div className="space-y-3 px-4 py-4">
-                      <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200">
-                        <p className="font-semibold text-white/90">
-                          {user?.name ?? "You"}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-300/90">
+                      <div className="rounded-xl border border-white/10 bg-white px-3 py-2 text-xs text-emerald-700/80">
+                        <p className="font-semibold">{user?.name ?? "You"}</p>
+                        <p className="truncate text-[11px]">
                           {user?.email ?? "Signed in"}
                         </p>
                       </div>
@@ -280,10 +271,10 @@ export default function SecureLayoutShell({
                             size="sm"
                             fullWidth
                             className={joinClassNames(
-                              "justify-between border border-white/10 bg-transparent text-[13px] font-medium text-slate-100",
+                              "justify-between border border-white bg-white text-[13px] text-emerald-700/80 font-medium",
                               focus
-                                ? "bg-white/10 text-white shadow-[0_10px_30px_rgba(56,189,248,0.35)]"
-                                : "hover:bg-white/10"
+                                ? "bg-white text-white shadow-[0_10px_30px_rgba(56,189,248,0.35)] text-emerald-700/80"
+                                : "hover:bg-white/50"
                             )}
                           />
                         )}
@@ -294,24 +285,24 @@ export default function SecureLayoutShell({
               </Menu>
 
               <div className="flex flex-1 flex-col items-center gap-1 text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-sky-200/75">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-emerald-700/80">
                   Our Family Budget
                 </p>
-                <h1 className="text-lg font-semibold text-white">
+                <h1 className="text-lg font-semibold text-emerald-950">
                   {activeItem?.label ?? "Budget Overview"}
                 </h1>
-                <p className="text-[11px] text-slate-300/85">
+                <p className="text-[11px] text-emerald-800/90">
                   {activeItem?.description ??
                     "Keep tabs on the plan and spend intentionally."}
                 </p>
               </div>
 
               <div className="hidden w-[120px] justify-end sm:flex">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-200/80">
+                <div className="rounded-2xl border border-emerald-700/20 bg-white/90 px-4 py-2 text-right">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
                     Status
                   </p>
-                  <p className="mt-0.5 text-sm font-medium text-emerald-100">
+                  <p className="mt-0.5 text-sm font-medium text-emerald-950">
                     On Track
                   </p>
                 </div>
@@ -326,7 +317,7 @@ export default function SecureLayoutShell({
       </main>
 
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center">
-        <nav className="pointer-events-auto w-full rounded-t-[30px] border border-white/12 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_24px_45px_rgba(8,13,25,0.6)] backdrop-blur-2xl">
+        <nav className="pointer-events-auto w-full rounded-t-[30px] border border-emerald-800/15 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_24px_45px_rgba(15,118,110,0.28)] backdrop-blur-2xl">
           <div className="flex items-center justify-around">
             {navItems.map((item) => {
               const isActive = pathname?.startsWith(item.href);
@@ -338,16 +329,16 @@ export default function SecureLayoutShell({
                   className={joinClassNames(
                     "group flex flex-1 flex-col items-center gap-1 rounded-2xl px-3 py-2 text-[11px] font-medium transition",
                     isActive
-                      ? "bg-white/15 text-white shadow-[0_16px_35px_rgba(56,189,248,0.35)]"
-                      : "text-slate-300/80 hover:bg-white/10 hover:text-white"
+                      ? "bg-emerald-200/80 text-emerald-950 shadow-[0_16px_35px_rgba(16,118,110,0.26)]"
+                      : "text-emerald-800/80 hover:bg-emerald-100 hover:text-emerald-950"
                   )}
                 >
                   <span
                     className={joinClassNames(
                       "grid size-9 place-items-center rounded-2xl border border-transparent transition-all",
                       isActive
-                        ? "border-white/20 bg-gradient-to-br from-sky-400/70 via-indigo-400/70 to-purple-400/70 text-white"
-                        : "bg-white/5 text-slate-200/80 group-hover:border-white/15 group-hover:text-white"
+                        ? "border-emerald-500/40 bg-gradient-to-br from-emerald-400/80 via-teal-400/80 to-sky-400/80 text-emerald-950"
+                        : "bg-white/80 text-emerald-700 group-hover:border-emerald-400/40 group-hover:bg-emerald-100 group-hover:text-emerald-950"
                     )}
                   >
                     <item.Icon />

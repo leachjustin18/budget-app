@@ -139,45 +139,45 @@ export default async function Home() {
 
   // render login screen as the main page
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-[#0b0f1c] via-[#141b2f] to-[#1d1d3b] px-6 py-12 text-slate-100">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-[#CAEFD1] via-[#e4f7ea] to-[#bdecd1] px-6 py-12 text-emerald-950">
       <div className="absolute inset-0">
-        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-sky-500/20 blur-3xl" />
-        <div className="absolute right-[-120px] top-10 h-96 w-96 rounded-full bg-indigo-600/25 blur-[140px]" />
-        <div className="absolute bottom-[-160px] left-1/3 h-96 w-96 rounded-full bg-emerald-500/15 blur-[140px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.2),transparent_65%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(129,140,248,0.18),transparent_60%)]" />
+        <div className="absolute -left-24 -top-24 h-80 w-80 rounded-full bg-emerald-400/25 blur-3xl" />
+        <div className="absolute right-[-120px] top-10 h-96 w-96 rounded-full bg-teal-400/25 blur-[140px]" />
+        <div className="absolute bottom-[-160px] left-1/3 h-96 w-96 rounded-full bg-emerald-500/18 blur-[140px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.22),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(45,212,191,0.2),transparent_60%)]" />
       </div>
 
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-16 top-24 hidden h-24 w-24 items-center justify-center md:flex">
-          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_18px_45px_rgba(251,191,36,0.35)]">
+          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_18px_45px_rgba(16,185,129,0.28)]">
             <Coin id="coin-a" className="h-full w-full" />
           </span>
         </div>
         <div className="absolute right-20 top-20 hidden h-32 w-32 -rotate-6 items-center justify-center md:flex">
-          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_24px_55px_rgba(251,191,36,0.45)]">
+          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_24px_55px_rgba(45,212,191,0.32)]">
             <Coin id="coin-b" className="h-full w-full" />
           </span>
         </div>
         <div className="absolute bottom-24 right-[18%] hidden h-20 w-20 rotate-6 items-center justify-center md:flex">
-          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_16px_35px_rgba(251,191,36,0.35)]">
+          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_16px_35px_rgba(20,184,166,0.28)]">
             <Coin id="coin-c" className="h-full w-full" />
           </span>
         </div>
         <div className="absolute bottom-16 left-1/4 hidden h-16 w-16 -rotate-3 items-center justify-center md:flex">
-          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_12px_28px_rgba(251,191,36,0.3)]">
+          <span className="relative inline-flex h-full w-full items-center justify-center rounded-full shadow-[0_12px_28px_rgba(16,185,129,0.24)]">
             <Coin id="coin-d" className="h-full w-full" />
           </span>
         </div>
       </div>
 
-      <div className="relative z-10 w-full max-w-lg rounded-[32px] border border-white/15 bg-white/10 px-8 py-10 shadow-[0_30px_70px_rgba(15,23,42,0.45)] backdrop-blur-xl">
+      <div className="relative z-10 w-full max-w-lg rounded-[32px] border border-emerald-800/15 bg-white/85 px-8 py-10 shadow-[0_30px_70px_rgba(15,118,110,0.22)] backdrop-blur-xl">
         <div className="space-y-6 text-center">
-          <p className="mx-auto inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1 text-xs font-semibold tracking-[0.3em] text-sky-200">
+          <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1 text-xs font-semibold tracking-[0.3em] text-emerald-700">
             Our Family Budget
           </p>
-          <h1 className="text-3xl font-semibold text-white">Welcome back</h1>
-          <p className="text-sm text-slate-200">
+          <h1 className="text-3xl font-semibold text-emerald-950">Welcome back</h1>
+          <p className="text-sm text-emerald-800">
             Pick up where you left off—review envelope balances, log new
             purchases, and keep the monthly plan on track.
           </p>
@@ -185,9 +185,9 @@ export default async function Home() {
 
         <div className="mt-8 space-y-6">
           <SignInButton />
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-xs text-slate-300">
-            <p className="font-medium text-slate-200">Heads up</p>
-            <p className="mt-1 text-[11px] leading-relaxed">
+          <div className="rounded-2xl border border-emerald-700/20 bg-emerald-50/90 px-4 py-3 text-left text-xs text-emerald-800">
+            <p className="font-medium text-emerald-900">Heads up</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-emerald-700">
               Google sign-in is limited to your approved accounts. Need another
               email added? Update the whitelist in your config.
             </p>
