@@ -181,48 +181,6 @@ const navItems: NavItem[] = [
   },
 ];
 
-const useHeaderCollapsed = (): boolean => {
-  const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    let lastKnownY = window.scrollY;
-    let ticking = false;
-
-    const update = () => {
-      const currentY = window.scrollY;
-      const direction = currentY > lastKnownY ? "down" : "up";
-      const shouldCollapse = currentY > 96 && direction === "down";
-
-      setCollapsed((previous) => {
-        if (previous === shouldCollapse) {
-          return previous;
-        }
-        return shouldCollapse;
-      });
-
-      if (currentY < 48) {
-        setCollapsed(false);
-      }
-
-      lastKnownY = currentY;
-      ticking = false;
-    };
-
-    const handleScroll = () => {
-      if (!ticking) {
-        window.requestAnimationFrame(update);
-        ticking = true;
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  return collapsed;
-};
-
 const UserAvatar = ({ user }: { user?: ShellUser }) => {
   const initials = useMemo(() => {
     if (!user?.name) return "";
@@ -261,29 +219,21 @@ export default function SecureLayoutShell({
   user,
 }: SecureLayoutShellProps) {
   const pathname = usePathname();
-  const headerCollapsed = useHeaderCollapsed();
 
   const activeItem = useMemo(() => {
     if (!pathname) return undefined;
     return navItems.find((item) => pathname.startsWith(item.href));
   }, [pathname]);
 
-  const headerTransform = headerCollapsed
-    ? "translateY(calc(-100% + 6rem))"
-    : "translateY(0)";
-
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-[#0b0f1c] via-[#141b2f] to-[#1d1d3b] text-slate-100">
+    <div className="relative min-h-screen">
       <div className="pointer-events-none fixed inset-x-0 top-0 z-30 flex justify-center ">
-        <header
-          className="pointer-events-auto w-full transition-transform duration-300 ease-out"
-          style={{ transform: headerTransform }}
-        >
-          <div className="relative overflow-hidden rounded-b-[30px] border border-white/12 bg-white/10 px-5 py-4 shadow-[0_28px_60px_rgba(15,23,42,0.45)] backdrop-blur-xl">
+        <header className="pointer-events-auto w-full transition-transform duration-300 ease-out">
+          <div className="relative overflow-hidden rounded-b-[30px] border border-white/12 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_4px_5px_rgba(8,13,25,0.6)] backdrop-blur-2xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_65%)]" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(129,140,248,0.22),transparent_60%)]" />
-              <div className="absolute inset-0 bg-gradient-to-br from-white/8 via-transparent to-white/0" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18)" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,rgba(129,140,248,0.22)" />
+              <div className="absolute inset-0 bg-gradient-to-br " />
             </div>
 
             <div className="relative flex items-center gap-4">
@@ -371,14 +321,12 @@ export default function SecureLayoutShell({
         </header>
       </div>
 
-      <main className="relative z-10 mx-auto w-full max-w-5xl px-5 pb-32 pt-36 sm:pt-40">
-        <div className="rounded-[28px] border border-white/10 bg-[#0b1120]/60 p-6 backdrop-blur-xl shadow-[0_24px_60px_rgba(8,15,35,0.45)]">
-          {children}
-        </div>
+      <main className="relative z-10 mx-auto w-full max-w-5xl px-5 shadow-[0_2px_10px_rgba(8,15,15,0.45)] bg-white pt-[120px] pb-[120px]">
+        {children}
       </main>
 
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center">
-        <nav className="pointer-events-auto w-full rounded-t-[30px] border border-white/12 bg-[#0d1528]/90 px-3 py-2.5 shadow-[0_24px_45px_rgba(8,13,25,0.6)] backdrop-blur-2xl">
+        <nav className="pointer-events-auto w-full rounded-t-[30px] border border-white/12 bg-[#CAEFD1]/90 px-3 py-2.5 shadow-[0_24px_45px_rgba(8,13,25,0.6)] backdrop-blur-2xl">
           <div className="flex items-center justify-around">
             {navItems.map((item) => {
               const isActive = pathname?.startsWith(item.href);
