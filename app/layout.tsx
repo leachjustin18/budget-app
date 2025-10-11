@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,6 +31,11 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -37,11 +43,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`min-h-screen bg-gradient-to-br from-[#f5f4ff] via-[#fff2f4] to-[#f0fbff] dark:from-[#05060f] dark:via-[#0c1224] dark:to-[#162036] text-slate-900 dark:text-slate-100 antialiased`}
-      >
-        {children}
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }
