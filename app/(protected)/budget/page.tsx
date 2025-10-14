@@ -10,21 +10,15 @@ import {
   MenuItems,
   Transition,
 } from "@headlessui/react";
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Controller,
   FormProvider,
   useFieldArray,
   useForm,
 } from "react-hook-form";
-import Toast, { type ToastVariant } from "@budget/components/UI/Toast";
+import { type ToastProps } from "@budget/components/UI/ToastUI";
+import Toast from "@budget/components/Toast";
 import { Button } from "@budget/components/UI/Button";
 import { joinClassNames } from "@budget/lib/helpers";
 import CurrencyInput from "@budget/components/CurrencyInput";
@@ -53,17 +47,6 @@ type BudgetSections = Record<BudgetSectionKey, BudgetCategory[]>;
 type BudgetFormValues = {
   income: IncomeLine[];
   sections: BudgetSections;
-};
-
-type ToastMessage = {
-  id: string;
-  title: string;
-  description?: string;
-  variant: ToastVariant;
-  autoDismissMs?: number;
-  actions?: ReactNode;
-  dismissible?: boolean;
-  persistent?: boolean;
 };
 
 type ConfirmState = {
@@ -314,7 +297,7 @@ export default function BudgetPage() {
     createEmptyBudgetForm()
   );
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [toasts, setToasts] = useState<ToastProps[]>([]);
   const [recentlyAdded, setRecentlyAdded] = useState<Record<string, boolean>>(
     {}
   );
@@ -377,11 +360,11 @@ export default function BudgetPage() {
     [expensesArray, recurringArray, savingsArray, debtArray]
   );
 
-  const dismissToast = useCallback((id: string) => {
+  const dismissToast = useCallback((id?: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
-  const upsertToast = useCallback((toast: ToastMessage) => {
+  const upsertToast = useCallback((toast: ToastProps) => {
     setToasts((prev) => {
       const index = prev.findIndex((item) => item.id === toast.id);
       if (index === -1) {
@@ -395,9 +378,9 @@ export default function BudgetPage() {
   }, []);
 
   const pushToast = useCallback(
-    (message: Omit<ToastMessage, "id"> & { id?: string }) => {
+    (message: Omit<ToastProps, "id"> & { id?: string }) => {
       const messageId = message.id ?? createId();
-      const nextToast: ToastMessage = { ...message, id: messageId };
+      const nextToast: ToastProps = { ...message, id: messageId };
       setToasts((prev) => [
         nextToast,
         ...prev.filter((item) => item.id !== messageId),
@@ -765,10 +748,9 @@ export default function BudgetPage() {
 
   return (
     <FormProvider {...formMethods}>
-      <div className="pointer-events-none fixed inset-x-0 top-[120px] z-40 flex flex-col items-center gap-3 px-4 sm:items-end">
-        {toasts.map((toast) => (
+      {toasts.map((toast) => (
+        <Fragment key={toast.id}>
           <Toast
-            key={toast.id}
             title={toast.title}
             description={toast.description}
             variant={toast.variant}
@@ -777,10 +759,10 @@ export default function BudgetPage() {
             persistent={toast.persistent}
             autoDismissMs={toast.autoDismissMs}
             onDismiss={() => dismissToast(toast.id)}
-            className="w-full sm:max-w-sm"
           />
-        ))}
-      </div>
+        </Fragment>
+      ))}
+
       <section className="space-y-6 pb-16">
         <header className="flex flex-col gap-4 rounded-3xl border border-emerald-700/20 bg-[#CAEFD1]/80 p-5 shadow-[0_20px_45px_rgba(22,101,52,0.22)] backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">

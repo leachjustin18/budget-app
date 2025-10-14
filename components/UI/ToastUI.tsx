@@ -6,8 +6,9 @@ import { joinClassNames } from "@budget/lib/helpers";
 
 export type ToastVariant = "success" | "info" | "warning" | "danger";
 
-type ToastProps = {
+export type ToastProps = {
   title: string;
+  id?: string;
   description?: string;
   variant?: ToastVariant;
   icon?: ReactNode;
@@ -143,9 +144,7 @@ export function Toast({
         ) : null}
       </div>
       {actions ? (
-        <div className="mt-3 flex flex-wrap justify-end gap-2">
-          {actions}
-        </div>
+        <div className="mt-3 flex flex-wrap justify-end gap-2">{actions}</div>
       ) : null}
     </div>
   );

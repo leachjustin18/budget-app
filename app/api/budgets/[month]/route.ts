@@ -230,7 +230,8 @@ export async function GET(
   _request: Request,
   { params }: { params: { month: string } }
 ) {
-  const month = await params.month;
+  const awaitedParams = await params;
+  const month = awaitedParams.month;
   const monthDate = monthKeyToDate(month);
   if (!monthDate) {
     return NextResponse.json(
@@ -456,7 +457,6 @@ export async function PUT(
     // Link transactions with budget categories if they exist but no budget relation yet.
     await tx.transaction.updateMany({
       where: {
-        categoryId: { in: Array.from(incomingAllocationKeys) },
         budgetId: null,
         type: { in: [TransactionType.EXPENSE, TransactionType.INCOME] },
         occurredOn: {
@@ -467,6 +467,14 @@ export async function PUT(
             Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1)
           ),
         },
+        OR: [
+          { categoryId: { in: Array.from(incomingAllocationKeys) } },
+          {
+            splits: {
+              some: { categoryId: { in: Array.from(incomingAllocationKeys) } },
+            },
+          },
+        ],
       },
       data: {
         budgetId: budget.id,

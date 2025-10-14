@@ -94,32 +94,6 @@ const navItems: NavItem[] = [
     },
   },
   {
-    key: "import",
-    href: "/import",
-    label: "Import",
-    description: "Bring in bank files and statements",
-    Icon: function ImportIcon() {
-      return (
-        <svg
-          aria-hidden="true"
-          role="img"
-          viewBox="0 0 24 24"
-          className="size-6"
-        >
-          <path
-            d="M12 3.25a.75.75 0 0 1 .75.75v9.19l1.72-1.72a.75.75 0 0 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0l-3.25-3.25A.75.75 0 0 1 9.03 11.5l1.72 1.72V4A.75.75 0 0 1 12 3.25"
-            fill="currentColor"
-          />
-          <path
-            d="M5.5 14.75a.75.75 0 0 0-1.5 0v3A2.75 2.75 0 0 0 6.75 20.5h10.5a2.75 2.75 0 0 0 2.75-2.75v-3a.75.75 0 0 0-1.5 0v3c0 .69-.56 1.25-1.25 1.25H6.75c-.69 0-1.25-.56-1.25-1.25z"
-            fill="currentColor"
-            opacity="0.8"
-          />
-        </svg>
-      );
-    },
-  },
-  {
     key: "rules",
     href: "/rules",
     label: "Rules",
