@@ -124,86 +124,6 @@ const SECTION_CONFIG: Record<
   },
 };
 
-const defaultBudget: BudgetFormValues = {
-  income: [
-    { uuid: createId(), source: "Household Salary", amount: 5200 },
-    { uuid: createId(), source: "Freelance Projects", amount: 800 },
-  ],
-  sections: {
-    expenses: [
-      {
-        uuid: createId(),
-        name: "Groceries",
-        emoji: "🛒",
-        planned: 650,
-        spent: 210,
-        carryForward: false,
-        repeat: "monthly",
-      },
-      {
-        uuid: createId(),
-        name: "Fuel",
-        emoji: "⛽",
-        planned: 220,
-        spent: 120,
-        carryForward: false,
-        repeat: "monthly",
-      },
-    ],
-    recurring: [
-      {
-        uuid: createId(),
-        name: "Streaming Bundle",
-        emoji: "🎬",
-        planned: 45,
-        spent: 45,
-        carryForward: false,
-        repeat: "monthly",
-      },
-      {
-        uuid: createId(),
-        name: "Mobile Plan",
-        emoji: "📱",
-        planned: 90,
-        spent: 90,
-        carryForward: false,
-        repeat: "monthly",
-      },
-    ],
-    savings: [
-      {
-        uuid: createId(),
-        name: "Emergency Fund",
-        emoji: "🛟",
-        planned: 300,
-        spent: 0,
-        carryForward: true,
-        repeat: "monthly",
-      },
-    ],
-    debt: [
-      {
-        uuid: createId(),
-        name: "Mortgage",
-        emoji: "🏠",
-        planned: 1800,
-        spent: 1800,
-        carryForward: false,
-        repeat: "monthly",
-      },
-      {
-        uuid: createId(),
-        name: "Student Loan",
-        emoji: "🎓",
-        planned: 320,
-        spent: 320,
-        carryForward: false,
-        repeat: "monthly",
-      },
-    ],
-  },
-};
-
 const createEmptyBudgetForm = (): BudgetFormValues => ({
   income: [],
   sections: {
@@ -386,16 +306,13 @@ const useSectionArray = (
 
 export default function BudgetPage() {
   const baseDate = useMemo(() => new Date(), []);
-  const initialMonthKey = getMonthKey(baseDate);
-
   const [monthsData, setMonthsData] = useState<
     Record<string, BudgetFormValues>
-  >({
-    [initialMonthKey]: defaultBudget,
-  });
+  >({});
   const [monthOffset, setMonthOffset] = useState(0);
-  const [draftValues, setDraftValues] =
-    useState<BudgetFormValues>(defaultBudget);
+  const [draftValues, setDraftValues] = useState<BudgetFormValues>(
+    createEmptyBudgetForm()
+  );
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [recentlyAdded, setRecentlyAdded] = useState<Record<string, boolean>>(
@@ -415,6 +332,13 @@ export default function BudgetPage() {
   const [emojiPickerTarget, setEmojiPickerTarget] =
     useState<EmojiPickerTarget>(null);
   const [showFutureWarning, setShowFutureWarning] = useState(false);
+  const [loadingMonths, setLoadingMonths] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [monthMetadata, setMonthMetadata] = useState<
+    Record<string, { exists: boolean }>
+  >({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const currentDate = useMemo(
     () => addMonths(baseDate, monthOffset),
@@ -453,48 +377,6 @@ export default function BudgetPage() {
     [expensesArray, recurringArray, savingsArray, debtArray]
   );
 
-  useEffect(() => {
-    reset(baseline);
-    setDraftValues(sanitizeBudgetValues(baseline));
-    setHasUnsavedChanges(false);
-  }, [baseline, reset]);
-
-  useEffect(() => {
-    const subscription = watch((value) => {
-      const sanitized = sanitizeBudgetValues(value as BudgetFormValues);
-      setDraftValues(sanitized);
-      const baselineSanitized = sanitizeBudgetValues(baseline);
-      setHasUnsavedChanges(
-        JSON.stringify(sanitized) !== JSON.stringify(baselineSanitized)
-      );
-    });
-
-    return () => subscription.unsubscribe();
-  }, [watch, baseline]);
-
-  useEffect(() => {
-    setShowFutureWarning(monthOffset > 0);
-  }, [monthOffset]);
-
-  useEffect(() => {
-    if (monthsData[currentMonthKey]) return;
-    setMonthsData((prev) => ({
-      ...prev,
-      [currentMonthKey]: createEmptyBudgetForm(),
-    }));
-  }, [currentMonthKey, monthsData]);
-
-  const triggerHighlight = useCallback((uuid: string) => {
-    setRecentlyAdded((prev) => ({ ...prev, [uuid]: true }));
-    window.setTimeout(() => {
-      setRecentlyAdded((prev) => {
-        const next = { ...prev };
-        delete next[uuid];
-        return next;
-      });
-    }, 2400);
-  }, []);
-
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
@@ -524,6 +406,95 @@ export default function BudgetPage() {
     []
   );
 
+  const loadBudgetForMonth = useCallback(
+    async (monthKey: string) => {
+      setLoadingMonths((prev) => ({ ...prev, [monthKey]: true }));
+      try {
+        const response = await fetch(`/api/budgets/${monthKey}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Request failed with ${response.status}`);
+        }
+
+        const payload = (await response.json()) as {
+          budget: BudgetFormValues;
+          exists: boolean;
+        };
+
+        const sanitized = sanitizeBudgetValues(payload.budget);
+        setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
+        setMonthMetadata((prev) => ({
+          ...prev,
+          [monthKey]: { exists: payload.exists },
+        }));
+        return sanitized;
+      } catch (error) {
+        console.error("Failed to load budget", error);
+        pushToast({
+          title: "Unable to load budget",
+          description: "Starting with a blank sheet for this month.",
+          variant: "danger",
+          autoDismissMs: 5000,
+        });
+        const blank = createEmptyBudgetForm();
+        setMonthsData((prev) => ({ ...prev, [monthKey]: blank }));
+        setMonthMetadata((prev) => ({
+          ...prev,
+          [monthKey]: { exists: false },
+        }));
+        return blank;
+      } finally {
+        setLoadingMonths((prev) => {
+          const next = { ...prev };
+          delete next[monthKey];
+          return next;
+        });
+      }
+    },
+    [pushToast]
+  );
+
+  useEffect(() => {
+    reset(baseline);
+    setDraftValues(sanitizeBudgetValues(baseline));
+    setHasUnsavedChanges(false);
+  }, [baseline, reset]);
+
+  useEffect(() => {
+    const subscription = watch((value) => {
+      const sanitized = sanitizeBudgetValues(value as BudgetFormValues);
+      setDraftValues(sanitized);
+      const baselineSanitized = sanitizeBudgetValues(baseline);
+      setHasUnsavedChanges(
+        JSON.stringify(sanitized) !== JSON.stringify(baselineSanitized)
+      );
+    });
+
+    return () => subscription.unsubscribe();
+  }, [watch, baseline]);
+
+  useEffect(() => {
+    if (monthsData[currentMonthKey] || loadingMonths[currentMonthKey]) return;
+    void loadBudgetForMonth(currentMonthKey);
+  }, [currentMonthKey, monthsData, loadingMonths, loadBudgetForMonth]);
+
+  useEffect(() => {
+    setShowFutureWarning(monthOffset > 0);
+  }, [monthOffset]);
+
+  const triggerHighlight = useCallback((uuid: string) => {
+    setRecentlyAdded((prev) => ({ ...prev, [uuid]: true }));
+    window.setTimeout(() => {
+      setRecentlyAdded((prev) => {
+        const next = { ...prev };
+        delete next[uuid];
+        return next;
+      });
+    }, 2400);
+  }, []);
+
   const handleAddIncome = useCallback(() => {
     const uuid = createId();
     incomeArray.prepend(createIncomeLine(uuid));
@@ -552,29 +523,71 @@ export default function BudgetPage() {
     [sectionArrays, triggerHighlight, pushToast]
   );
 
-  const handleSaveForLater = useCallback(() => {
+  const handleSaveBudget = useCallback(async () => {
     const sanitized = sanitizeBudgetValues(draftValues);
-    setMonthsData((prev) => ({
-      ...prev,
-      [currentMonthKey]: sanitized,
-    }));
-    reset(sanitized);
-    setHasUnsavedChanges(false);
-    pushToast({
-      title: "Changes saved locally",
-      description:
-        "We will keep these updates ready for when you want to sync.",
-      variant: "info",
-      autoDismissMs: 4000,
-    });
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/budgets/${currentMonthKey}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ budget: sanitized }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        budget: BudgetFormValues;
+        exists: boolean;
+      };
+
+      const normalized = sanitizeBudgetValues(payload.budget);
+      setMonthsData((prev) => ({
+        ...prev,
+        [currentMonthKey]: normalized,
+      }));
+      setMonthMetadata((prev) => ({
+        ...prev,
+        [currentMonthKey]: { exists: true },
+      }));
+      reset(normalized);
+      setDraftValues(normalized);
+      setHasUnsavedChanges(false);
+      pushToast({
+        title: "Budget saved",
+        description: "Everything is synced with your database.",
+        variant: "success",
+        autoDismissMs: 3600,
+      });
+    } catch (error) {
+      console.error("Failed to save budget", error);
+      pushToast({
+        title: "Save failed",
+        description: "We could not sync those changes. Please try again.",
+        variant: "danger",
+        persistent: false,
+        autoDismissMs: 5000,
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }, [draftValues, currentMonthKey, reset, pushToast]);
 
-  const handleCopyPreviousMonth = useCallback(() => {
+  const handleCopyPreviousMonth = useCallback(async () => {
     const previousDate = addMonths(currentDate, -1);
     const previousKey = getMonthKey(previousDate);
-    const previousData = monthsData[previousKey];
+    let previousData = monthsData[previousKey];
 
-    if (!previousData) {
+    if (!previousData && !loadingMonths[previousKey]) {
+      previousData = await loadBudgetForMonth(previousKey);
+    }
+
+    const previousExists = monthMetadata[previousKey]?.exists ?? false;
+
+    if (!previousData || !previousExists) {
       pushToast({
         title: "Nothing to copy yet",
         description: "There is no budget saved for the previous month.",
@@ -589,6 +602,10 @@ export default function BudgetPage() {
       ...prev,
       [currentMonthKey]: carried,
     }));
+    setMonthMetadata((prev) => ({
+      ...prev,
+      [currentMonthKey]: { exists: false },
+    }));
     reset(carried);
     setDraftValues(carried);
     setHasUnsavedChanges(false);
@@ -600,27 +617,48 @@ export default function BudgetPage() {
       variant: "info",
       autoDismissMs: 4500,
     });
-  }, [currentDate, currentMonthKey, monthsData, reset, pushToast]);
+  }, [
+    currentDate,
+    currentMonthKey,
+    monthsData,
+    monthMetadata,
+    loadingMonths,
+    loadBudgetForMonth,
+    reset,
+    pushToast,
+  ]);
 
   useEffect(() => {
     if (hasUnsavedChanges) {
       upsertToast({
         id: "unsaved-changes",
-        title: "Changes are stored locally",
+        title: "Unsaved changes",
         description:
-          "Review everything and choose Save for later when you are ready.",
+          "Review your updates and save whenever you are ready to sync.",
         variant: "warning",
         persistent: true,
         actions: (
-          <Button size="sm" variant="primary" onClick={handleSaveForLater}>
-            Save for later
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={handleSaveBudget}
+            loading={isSaving}
+            loadingText="Saving"
+          >
+            Save budget
           </Button>
         ),
       });
     } else {
       dismissToast("unsaved-changes");
     }
-  }, [hasUnsavedChanges, upsertToast, dismissToast, handleSaveForLater]);
+  }, [
+    hasUnsavedChanges,
+    upsertToast,
+    dismissToast,
+    handleSaveBudget,
+    isSaving,
+  ]);
 
   useEffect(() => {
     if (showFutureWarning) {
