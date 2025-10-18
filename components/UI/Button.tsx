@@ -7,7 +7,7 @@ import {
 } from "react";
 import { joinClassNames } from "@budget/lib/helpers";
 
-type Variant =
+export type Variant =
   | "primary"
   | "secondary"
   | "tertiary"
@@ -25,6 +25,7 @@ export type ButtonProps = {
   iconTrailing?: ReactNode;
   loading?: boolean;
   loadingText?: string;
+  onClick?: unknown;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 const baseStyles =

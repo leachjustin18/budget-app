@@ -104,7 +104,7 @@ export async function PATCH(
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Invalid payload", details: parsed.error.flatten() },
+      { error: "Invalid payload", details: parsed.error },
       { status: 400 }
     );
   }
@@ -280,6 +280,37 @@ export async function PATCH(
     }
     return NextResponse.json(
       { error: "Unable to update transaction" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: { transactionId: string } }
+) {
+  try {
+    const transaction = await prisma.transaction.delete({
+      where: { id: params.transactionId },
+    });
+
+    if (!transaction) {
+      return NextResponse.json(
+        { error: "Transaction not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      { message: "Transaction deleted" },
+      { status: 200 }
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    return NextResponse.json(
+      { error: "Unable to delete transaction" },
       { status: 500 }
     );
   }

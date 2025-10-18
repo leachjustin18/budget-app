@@ -83,7 +83,7 @@ export const ensureDefaultCategory = async (
   });
 };
 
-const ruleFieldValue = (
+export const ruleFieldValue = (
   rule: Rule,
   transaction: {
     description?: string | null;
@@ -102,7 +102,7 @@ const ruleFieldValue = (
   }
 };
 
-const matchesRule = (rule: Rule, value: string): boolean => {
+export const matchesRule = (rule: Rule, value: string): boolean => {
   const normalizedTarget = value.trim();
   const normalizedValue = normalizedTarget.toLowerCase();
   const normalizedMatchValue = rule.matchValue.trim();

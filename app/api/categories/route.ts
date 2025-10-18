@@ -15,6 +15,16 @@ export async function GET() {
   const categories = await prisma.category.findMany({
     where: { archivedAt: null },
     orderBy: [{ section: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+    include: {
+      _count: {
+        select: {
+          allocations: true,
+          transactions: true,
+          transactionSplits: true,
+          rules: true,
+        },
+      },
+    },
   });
 
   return NextResponse.json({
@@ -25,6 +35,12 @@ export async function GET() {
       section: category.section,
       carryForwardDefault: category.carryForwardDefault,
       repeatCadenceDefault: category.repeatCadenceDefault,
+      usage: {
+        budgets: category._count.allocations,
+        transactions: category._count.transactions,
+        transactionSplits: category._count.transactionSplits,
+        rules: category._count.rules,
+      },
     })),
   });
 }
@@ -68,6 +84,12 @@ export async function POST(request: Request) {
       section: created.section,
       carryForwardDefault: created.carryForwardDefault,
       repeatCadenceDefault: created.repeatCadenceDefault,
+      usage: {
+        budgets: 0,
+        transactions: 0,
+        transactionSplits: 0,
+        rules: 0,
+      },
     },
   });
 }

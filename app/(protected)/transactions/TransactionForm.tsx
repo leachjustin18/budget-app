@@ -12,6 +12,14 @@ export type CategoryOption = {
   name: string;
   emoji: string;
   section: string;
+  carryForwardDefault?: boolean;
+  repeatCadenceDefault?: "MONTHLY" | "ONCE";
+  usage?: {
+    budgets: number;
+    transactions: number;
+    transactionSplits: number;
+    rules: number;
+  };
 };
 
 export type BudgetSnapshot = Record<
@@ -310,16 +318,13 @@ export default function TransactionForm({
 
   return (
     <form
-      className="space-y-6 rounded-3xl border border-emerald-200/40 bg-white/80 p-6 shadow-[0_20px_45px_rgba(16,185,129,0.12)] backdrop-blur"
       onSubmit={(event) => {
         event.preventDefault();
         void handleSubmit();
       }}
+      className="space-y-6"
     >
       <header className="space-y-1">
-        <h3 className="text-lg font-semibold tracking-tight">
-          Add a Manual Transaction
-        </h3>
         <p className="text-sm text-emerald-900/70">
           Capture cash purchases or anything that hasn’t synced yet.
         </p>

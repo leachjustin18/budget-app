@@ -8,13 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Transition,
-  TransitionChild,
-  Dialog,
-  DialogPanel,
-  DialogTitle,
-} from "@headlessui/react";
+import { Transition } from "@headlessui/react";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
 import Toast from "@budget/components/Toast";
 import { Button } from "@budget/components/UI/Button";
@@ -25,6 +19,7 @@ import TransactionForm, {
   type TransactionFormSubmitPayload,
 } from "./TransactionForm";
 import { getMonthKey, parseMonthKey } from "@budget/lib/transactions";
+import Modal from "@budget/components/Modal";
 
 type TransactionType = "EXPENSE" | "INCOME" | "TRANSFER";
 type TransactionOrigin = "MANUAL" | "IMPORT" | "ADJUSTMENT";
@@ -182,6 +177,21 @@ export default function TransactionsPage() {
   const [categorySaving, setCategorySaving] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [deleteState, setDeleteState] = useState<{
+    isOpen: boolean;
+    amount: number;
+    merchant: string;
+    transactionId: string;
+    occurredOn: string;
+    isDeleting?: boolean;
+  }>({
+    transactionId: "",
+    isOpen: false,
+    amount: 0,
+    merchant: "",
+    occurredOn: "",
+    isDeleting: false,
+  });
   const [createFormKey, setCreateFormKey] = useState(0);
   const pendingCategoryResolver = useRef<
     ((value: CategoryOption | null) => void) | undefined
@@ -343,6 +353,47 @@ export default function TransactionsPage() {
         });
       } finally {
         setCreateInFlight(false);
+      }
+    },
+    [fetchTransactions, pushToast]
+  );
+
+  const handleDeletManualTransaction = useCallback(
+    async (transactionId: string) => {
+      setDeleteState((prevState) => ({ ...prevState, isDeleting: true }));
+      try {
+        const response = await fetch(`/api/transactions/${transactionId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error ?? "Unable to save transaction");
+        }
+
+        pushToast({
+          title: "Transaction deleted",
+          variant: "success",
+        });
+
+        await fetchTransactions({ silent: true });
+      } catch (error) {
+        pushToast({
+          title: "Couldn't delete transaction",
+          description:
+            error instanceof Error ? error.message : "Unexpected error",
+          variant: "danger",
+        });
+      } finally {
+        setDeleteState({
+          isOpen: false,
+          amount: 0,
+          merchant: "",
+          transactionId: "",
+          occurredOn: "",
+          isDeleting: false,
+        });
       }
     },
     [fetchTransactions, pushToast]
@@ -692,6 +743,11 @@ export default function TransactionsPage() {
                           : null,
                     },
                   ];
+              const transactionOrigin = formatTransactionOrigin(
+                transaction.origin
+              );
+
+              console.log("transactionOrigin", transactionOrigin);
 
               return (
                 <article
@@ -716,13 +772,8 @@ export default function TransactionsPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-900/70">
                     <span>{occurredDate}</span>
-                    {transaction.isPending ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-600">
-                        Pending
-                      </span>
-                    ) : null}
                     <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-600">
-                      {formatTransactionOrigin(transaction.origin)}
+                      {transactionOrigin}
                     </span>
                     {transaction.importBatchId ? (
                       <span className="rounded-full bg-sky-100 px-2 py-1 text-sky-600">
@@ -759,6 +810,26 @@ export default function TransactionsPage() {
                     >
                       Edit
                     </Button>
+
+                    {transactionOrigin?.toLowerCase() === "manual" ? (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() =>
+                          setDeleteState({
+                            isOpen: true,
+                            amount: transaction.amount,
+                            merchant: transaction.merchant,
+                            occurredOn: transaction.occurredOn,
+                            transactionId: transaction.id,
+                          })
+                        }
+                      >
+                        Delete
+                      </Button>
+                    ) : (
+                      ""
+                    )}
                   </div>
                 </article>
               );
@@ -767,320 +838,243 @@ export default function TransactionsPage() {
         </div>
       </section>
 
-      <Transition appear show={isCreateModalOpen} as={Fragment}>
-        <Dialog
-          as="div"
-          className="relative z-50"
-          onClose={() => {
-            if (!createInFlight) {
-              setIsCreateModalOpen(false);
-              setCreateFormKey((prev) => prev + 1);
-            }
+      <Modal
+        isOpen={deleteState.isOpen}
+        onClose={() => {
+          setDeleteState({
+            isOpen: false,
+            amount: 0,
+            merchant: "",
+            transactionId: "",
+            occurredOn: "",
+          });
+        }}
+        onCancel={() => {
+          setDeleteState({
+            isOpen: false,
+            amount: 0,
+            merchant: "",
+            transactionId: "",
+            occurredOn: "",
+          });
+        }}
+        title="Delete Transaction"
+        onSave={() => {
+          handleDeletManualTransaction(deleteState.transactionId);
+        }}
+        saveVariant="destructive"
+        isSaving={deleteState.isDeleting}
+        saveText="Yes, Delete 💣"
+        loadingText="Deleting..."
+      >
+        <p className="text-m text-emerald-900/70">
+          Are you sure you want to delete this manual transaction?{" "}
+          <span style={{ fontSize: 25 }}>🤨</span>
+        </p>
+        <div className="space-y-2">
+          <p>
+            <label className="text-s font-semibold  text-emerald-900/70">
+              Merchant:{" "}
+            </label>
+            <span className="text-s text-emerald-900/70">
+              {deleteState.merchant}
+            </span>
+          </p>
+
+          <p>
+            <label className="text-s font-semibold  text-emerald-900/70">
+              Amount:{" "}
+            </label>
+            <span className="text-s text-emerald-900/70">
+              ${deleteState.amount}
+            </span>
+          </p>
+
+          <p>
+            <label className="text-s font-semibold  text-emerald-900/70">
+              Date:
+            </label>
+            {deleteState.occurredOn ? (
+              <span className="text-s text-emerald-900/70">
+                {dayFormatter.format(
+                  new Date(`${deleteState.occurredOn}T00:00:00`)
+                )}
+              </span>
+            ) : (
+              ""
+            )}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => {
+          if (!createInFlight) {
+            setIsCreateModalOpen(false);
+            setCreateFormKey((prev) => prev + 1);
+          }
+        }}
+        title="Add a Manual Transaction"
+      >
+        <TransactionForm
+          key={createFormKey}
+          categories={categories}
+          budgetByCategory={budgetByCategory}
+          defaultCategoryId={defaultCategoryId}
+          onSubmit={handleManualSubmit}
+          submitLabel="Save transaction"
+          submitting={createInFlight}
+          showCancel
+          onCancel={() => {
+            setIsCreateModalOpen(false);
+            setCreateFormKey((prev) => prev + 1);
           }}
+          onCreateCategory={requestCategoryCreation}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          if (!isImporting) {
+            setIsImportModalOpen(false);
+          }
+        }}
+        onCancel={handleImportModalClosing}
+        title="Import transactions"
+      >
+        <p className="text-sm text-emerald-900/70">
+          Upload a CSV export from your bank. We&apos;ll skip duplicates and run
+          your categorization rules automatically.
+        </p>
+
+        <div
+          className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed  px-6 py-10 text-center text-sm text-emerald-900/80 transaction ${
+            isDragging
+              ? "border-emerald-500  bg-emerald-50/90"
+              : "border-emerald-200 bg-emerald-50/60"
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDragEnd={handleDragEnd}
         >
-          <TransitionChild
-            as={Fragment}
-            enter="ease-out duration-200"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-150"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-emerald-950/40 backdrop-blur" />
-          </TransitionChild>
-
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-6">
-              <TransitionChild
-                as={Fragment}
-                enter="ease-out duration-200"
-                enterFrom="opacity-0 translate-y-1"
-                enterTo="opacity-100 translate-y-0"
-                leave="ease-in duration-150"
-                leaveFrom="opacity-100 translate-y-0"
-                leaveTo="opacity-0 translate-y-1"
-              >
-                <DialogPanel className="w-full max-w-2xl">
-                  <TransactionForm
-                    key={createFormKey}
-                    categories={categories}
-                    budgetByCategory={budgetByCategory}
-                    defaultCategoryId={defaultCategoryId}
-                    onSubmit={handleManualSubmit}
-                    submitLabel="Save transaction"
-                    submitting={createInFlight}
-                    showCancel
-                    onCancel={() => {
-                      setIsCreateModalOpen(false);
-                      setCreateFormKey((prev) => prev + 1);
-                    }}
-                    onCreateCategory={requestCategoryCreation}
-                  />
-                </DialogPanel>
-              </TransitionChild>
-            </div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".csv"
+            className="sr-only"
+            disabled={isImporting}
+            onChange={handleFileInputChange}
+          />
+          <span className="text-2xl">📁</span>
+          <div>
+            <p className="font-semibold">Drag a CSV here</p>
+            <p className="text-xs text-emerald-900/60">
+              Or browse your files to select one
+            </p>
           </div>
-        </Dialog>
-      </Transition>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={isImporting}
+            loadingText="Importing…"
+            disabled={isImporting}
+            onClick={openFilePicker}
+          >
+            Browse files
+          </Button>
+        </div>
+        <Transition show={isWrongExtension}>
+          <p className="font-semibold text-red-700 data-enter:duration-100 data-enter:data-closed:-translate-y-full">
+            🙄 That&apos;s not going to work dummy
+          </p>
+        </Transition>
 
-      <Transition appear show={isImportModalOpen} as={Fragment}>
-        <Dialog
-          as="div"
-          className="relative z-50"
-          onClose={() => {
-            if (!isImporting) {
-              setIsImportModalOpen(false);
+        <p className="text-xs text-emerald-900/60">
+          Need to add a merchant manually? Use the actions menu to create a
+          transaction instead.
+        </p>
+      </Modal>
+
+      <Modal
+        isOpen={categoryModalOpen}
+        onClose={handleCategoryModalClose}
+        title="Add a category"
+        onCancel={handleCategoryModalClose}
+        onSave={handleCategorySubmit}
+        isSaving={categorySaving}
+        saveText="Save category"
+      >
+        <div className="space-y-3 text-sm">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase text-emerald-900/70">
+              Name
+            </label>
+            <input
+              value={categoryForm.name}
+              onChange={(event) =>
+                setCategoryForm((prev) => ({
+                  ...prev,
+                  name: event.target.value,
+                }))
+              }
+              className="w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+              placeholder="Groceries"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase text-emerald-900/70">
+              Section
+            </label>
+            <select
+              value={categoryForm.section}
+              onChange={(event) =>
+                setCategoryForm((prev) => ({
+                  ...prev,
+                  section: event.target.value as CategoryOption["section"],
+                }))
+              }
+              className="w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            >
+              <option value="EXPENSES">Expenses</option>
+              <option value="RECURRING">Recurring</option>
+              <option value="SAVINGS">Savings</option>
+              <option value="DEBT">Debt</option>
+            </select>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(editingTransaction)}
+        onClose={() => setEditingTransaction(null)}
+        title="Edit a Manual Transaction"
+      >
+        {editingTransaction ? (
+          <TransactionForm
+            categories={categories}
+            budgetByCategory={budgetByCategory}
+            defaultCategoryId={defaultCategoryId}
+            onSubmit={(payload) =>
+              handleEditSubmit(editingTransaction.id, payload)
             }
-          }}
-        >
-          <TransitionChild
-            as={Fragment}
-            enter="ease-out duration-200"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-150"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur" />
-          </TransitionChild>
-
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-6">
-              <TransitionChild
-                enter="ease-out duration-200"
-                enterFrom="opacity-0 translate-y-1"
-                enterTo="opacity-100 translate-y-0"
-                leave="ease-in duration-150"
-                leaveFrom="opacity-100 translate-y-0"
-                leaveTo="opacity-0 translate-y-1"
-              >
-                <DialogPanel className="w-full max-w-lg space-y-6 rounded-3xl border border-emerald-200 bg-white p-6 shadow-2xl">
-                  <DialogTitle className="text-lg font-semibold text-emerald-950">
-                    Import transactions
-                  </DialogTitle>
-                  <p className="text-sm text-emerald-900/70">
-                    Upload a CSV export from your bank. We&apos;ll skip
-                    duplicates and run your categorization rules automatically.
-                  </p>
-
-                  <div
-                    className={`flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed  px-6 py-10 text-center text-sm text-emerald-900/80 transaction ${
-                      isDragging
-                        ? "border-emerald-500  bg-emerald-50/90"
-                        : "border-emerald-200 bg-emerald-50/60"
-                    }`}
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDragEnd={handleDragEnd}
-                  >
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept=".csv"
-                      className="sr-only"
-                      disabled={isImporting}
-                      onChange={handleFileInputChange}
-                    />
-                    <span className="text-2xl">📁</span>
-                    <div>
-                      <p className="font-semibold">Drag a CSV here</p>
-                      <p className="text-xs text-emerald-900/60">
-                        Or browse your files to select one
-                      </p>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      loading={isImporting}
-                      loadingText="Importing…"
-                      disabled={isImporting}
-                      onClick={openFilePicker}
-                    >
-                      Browse files
-                    </Button>
-                  </div>
-                  <Transition show={isWrongExtension}>
-                    <p className="font-semibold text-red-700 data-enter:duration-100 data-enter:data-closed:-translate-y-full">
-                      🙄 That&apos;s not going to work dummy
-                    </p>
-                  </Transition>
-
-                  <p className="text-xs text-emerald-900/60">
-                    Need to add a merchant manually? Use the actions menu to
-                    create a transaction instead.
-                  </p>
-                  <div className="flex justify-end gap-3">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={handleImportModalClosing}
-                      disabled={isImporting}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </DialogPanel>
-              </TransitionChild>
-            </div>
-          </div>
-        </Dialog>
-      </Transition>
-
-      <Transition appear show={categoryModalOpen} as={Fragment}>
-        <Dialog
-          as="div"
-          className="relative z-50"
-          onClose={handleCategoryModalClose}
-        >
-          <TransitionChild
-            as={Fragment}
-            enter="ease-out duration-200"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-150"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-emerald-950/20 backdrop-blur" />
-          </TransitionChild>
-
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-6">
-              <TransitionChild
-                as={Fragment}
-                enter="ease-out duration-200"
-                enterFrom="opacity-0 translate-y-1"
-                enterTo="opacity-100 translate-y-0"
-                leave="ease-in duration-150"
-                leaveFrom="opacity-100 translate-y-0"
-                leaveTo="opacity-0 translate-y-1"
-              >
-                <DialogPanel className="w-full max-w-md space-y-5 rounded-3xl border border-emerald-200 bg-white p-6 shadow-2xl">
-                  <DialogTitle className="text-lg font-semibold text-emerald-950">
-                    Add a category
-                  </DialogTitle>
-                  <div className="space-y-3 text-sm">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold uppercase text-emerald-900/70">
-                        Name
-                      </label>
-                      <input
-                        value={categoryForm.name}
-                        onChange={(event) =>
-                          setCategoryForm((prev) => ({
-                            ...prev,
-                            name: event.target.value,
-                          }))
-                        }
-                        className="w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                        placeholder="Groceries"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold uppercase text-emerald-900/70">
-                        Section
-                      </label>
-                      <select
-                        value={categoryForm.section}
-                        onChange={(event) =>
-                          setCategoryForm((prev) => ({
-                            ...prev,
-                            section: event.target
-                              .value as CategoryOption["section"],
-                          }))
-                        }
-                        className="w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                      >
-                        <option value="EXPENSES">Expenses</option>
-                        <option value="RECURRING">Recurring</option>
-                        <option value="SAVINGS">Savings</option>
-                        <option value="DEBT">Debt</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-3">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={handleCategoryModalClose}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => void handleCategorySubmit()}
-                      loading={categorySaving}
-                      loadingText="Saving…"
-                    >
-                      Save category
-                    </Button>
-                  </div>
-                </DialogPanel>
-              </TransitionChild>
-            </div>
-          </div>
-        </Dialog>
-      </Transition>
-
-      <Transition appear show={Boolean(editingTransaction)} as={Fragment}>
-        <Dialog
-          as="div"
-          className="relative z-50"
-          onClose={() => setEditingTransaction(null)}
-        >
-          <TransitionChild
-            as={Fragment}
-            enter="ease-out duration-200"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-150"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-emerald-950/40 backdrop-blur" />
-          </TransitionChild>
-
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-6">
-              <TransitionChild
-                as={Fragment}
-                enter="ease-out duration-200"
-                enterFrom="opacity-0 translate-y-1"
-                enterTo="opacity-100 translate-y-0"
-                leave="ease-in duration-150"
-                leaveFrom="opacity-100 translate-y-0"
-                leaveTo="opacity-0 translate-y-1"
-              >
-                <DialogPanel className="w-full max-w-2xl">
-                  {editingTransaction ? (
-                    <TransactionForm
-                      categories={categories}
-                      budgetByCategory={budgetByCategory}
-                      defaultCategoryId={defaultCategoryId}
-                      onSubmit={(payload) =>
-                        handleEditSubmit(editingTransaction.id, payload)
-                      }
-                      submitLabel="Update transaction"
-                      submitting={editInFlight}
-                      initialState={mapTransactionToFormState(
-                        editingTransaction,
-                        defaultCategoryId,
-                        categories
-                      )}
-                      showCancel
-                      onCancel={() => setEditingTransaction(null)}
-                      onCreateCategory={requestCategoryCreation}
-                    />
-                  ) : null}
-                </DialogPanel>
-              </TransitionChild>
-            </div>
-          </div>
-        </Dialog>
-      </Transition>
+            submitLabel="Update transaction"
+            submitting={editInFlight}
+            initialState={mapTransactionToFormState(
+              editingTransaction,
+              defaultCategoryId,
+              categories
+            )}
+            showCancel
+            onCancel={() => setEditingTransaction(null)}
+            onCreateCategory={requestCategoryCreation}
+          />
+        ) : (
+          ""
+        )}
+      </Modal>
 
       {toasts.map((toast) => (
         <Fragment key={toast.id}>

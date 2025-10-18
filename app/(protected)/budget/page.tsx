@@ -22,6 +22,9 @@ import Toast from "@budget/components/Toast";
 import { Button } from "@budget/components/UI/Button";
 import { joinClassNames } from "@budget/lib/helpers";
 import CurrencyInput from "@budget/components/CurrencyInput";
+import CategoryManagerDialog, {
+  type ManagedCategory,
+} from "./CategoryManagerDialog";
 
 type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
 type RepeatCadence = "monthly" | "once";
@@ -322,6 +325,7 @@ export default function BudgetPage() {
     Record<string, { exists: boolean }>
   >({});
   const [isSaving, setIsSaving] = useState(false);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
 
   const currentDate = useMemo(
     () => addMonths(baseDate, monthOffset),
@@ -342,7 +346,7 @@ export default function BudgetPage() {
     defaultValues: baseline,
   });
 
-  const { control, reset, watch, setValue } = formMethods;
+  const { control, reset, watch, setValue, getValues } = formMethods;
 
   const incomeArray = useFieldArray({ control, name: "income" });
   const expensesArray = useSectionArray(control, "expenses");
@@ -731,6 +735,340 @@ export default function BudgetPage() {
     [openDeleteConfirmation, sectionArrays]
   );
 
+  const handleManagedCategoryUpdate = useCallback(
+    (category: ManagedCategory) => {
+      const sectionOrder: BudgetSectionKey[] = [
+        "expenses",
+        "recurring",
+        "savings",
+        "debt",
+      ];
+      let updatedDraft = false;
+
+      setDraftValues((prev) => {
+        let mutated = false;
+        const nextSections: BudgetSections = {
+          expenses: prev.sections.expenses,
+          recurring: prev.sections.recurring,
+          savings: prev.sections.savings,
+          debt: prev.sections.debt,
+        };
+
+        sectionOrder.forEach((sectionKey) => {
+          nextSections[sectionKey] = prev.sections[sectionKey].map(
+            (item, index) => {
+              if (item.uuid !== category.id) {
+                return item;
+              }
+
+              mutated = true;
+
+              if (item.name !== category.name) {
+                setValue(
+                  `sections.${sectionKey}.${index}.name` as const,
+                  category.name,
+                  { shouldDirty: false }
+                );
+              }
+
+              if (item.emoji !== category.emoji) {
+                setValue(
+                  `sections.${sectionKey}.${index}.emoji` as const,
+                  category.emoji,
+                  { shouldDirty: false }
+                );
+              }
+
+              return {
+                ...item,
+                name: category.name,
+                emoji: category.emoji,
+              };
+            }
+          );
+        });
+
+        if (!mutated) {
+          return prev;
+        }
+
+        updatedDraft = true;
+
+        return {
+          ...prev,
+          sections: nextSections,
+        };
+      });
+
+      if (!updatedDraft) {
+        return;
+      }
+
+      setMonthsData((prev) => {
+        const current = prev[currentMonthKey];
+        if (!current) return prev;
+
+        let mutated = false;
+        const nextSections: BudgetSections = {
+          expenses: current.sections.expenses.map((item) => {
+            if (item.uuid !== category.id) {
+              return item;
+            }
+            mutated = true;
+            return { ...item, name: category.name, emoji: category.emoji };
+          }),
+          recurring: current.sections.recurring.map((item) => {
+            if (item.uuid !== category.id) {
+              return item;
+            }
+            mutated = true;
+            return { ...item, name: category.name, emoji: category.emoji };
+          }),
+          savings: current.sections.savings.map((item) => {
+            if (item.uuid !== category.id) {
+              return item;
+            }
+            mutated = true;
+            return { ...item, name: category.name, emoji: category.emoji };
+          }),
+          debt: current.sections.debt.map((item) => {
+            if (item.uuid !== category.id) {
+              return item;
+            }
+            mutated = true;
+            return { ...item, name: category.name, emoji: category.emoji };
+          }),
+        };
+
+        if (!mutated) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [currentMonthKey]: {
+            ...current,
+            sections: nextSections,
+          },
+        };
+      });
+    },
+    [setDraftValues, setValue, setMonthsData, currentMonthKey]
+  );
+
+  const handleManagedCategoryRemoved = useCallback(
+    (
+      categoryId: string,
+      options: {
+        transactionsTargetId: string | null;
+        budgetTargetId: string | null;
+      } = { transactionsTargetId: null, budgetTargetId: null }
+    ) => {
+      const sectionOrder: BudgetSectionKey[] = [
+        "expenses",
+        "recurring",
+        "savings",
+        "debt",
+      ];
+      const removedPositions: Array<{
+        section: BudgetSectionKey;
+        index: number;
+      }> = [];
+      const removedRecords: Array<{
+        section: BudgetSectionKey;
+        category: BudgetCategory;
+      }> = [];
+
+      sectionOrder.forEach((sectionKey) => {
+        const sectionValues =
+          getValues(`sections.${sectionKey}` as const) ?? [];
+        const index = sectionValues.findIndex(
+          (item) => item?.uuid === categoryId
+        );
+
+        if (index !== -1) {
+          removedPositions.push({ section: sectionKey, index });
+          const candidate = sectionValues[index] as BudgetCategory | undefined;
+          if (candidate) {
+            removedRecords.push({ section: sectionKey, category: candidate });
+          }
+          sectionArrays[sectionKey].remove(index);
+        }
+      });
+
+      setDraftValues((prev) => {
+        let mutated = false;
+        const nextSections: BudgetSections = {
+          expenses: prev.sections.expenses.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              return false;
+            }
+            return true;
+          }),
+          recurring: prev.sections.recurring.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              return false;
+            }
+            return true;
+          }),
+          savings: prev.sections.savings.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              return false;
+            }
+            return true;
+          }),
+          debt: prev.sections.debt.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              return false;
+            }
+            return true;
+          }),
+        };
+
+        if (options.budgetTargetId) {
+          removedRecords.forEach(({ section, category }) => {
+            const list = nextSections[section];
+            const targetIndex = list.findIndex(
+              (item) => item.uuid === options.budgetTargetId
+            );
+            if (targetIndex !== -1) {
+              const target = list[targetIndex];
+              const nextPlanned =
+                (target.planned ?? 0) + (category.planned ?? 0);
+              const nextSpent =
+                (target.spent ?? 0) + (category.spent ?? 0);
+              list[targetIndex] = {
+                ...target,
+                planned: nextPlanned,
+                spent: nextSpent,
+              };
+
+              setValue(
+                `sections.${section}.${targetIndex}.planned` as const,
+                nextPlanned,
+                { shouldDirty: true }
+              );
+              setValue(
+                `sections.${section}.${targetIndex}.spent` as const,
+                nextSpent,
+                { shouldDirty: true }
+              );
+            }
+          });
+        }
+
+        if (!mutated && removedRecords.length === 0) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          sections: nextSections,
+        };
+      });
+
+      setMonthsData((prev) => {
+        const current = prev[currentMonthKey];
+        if (!current) return prev;
+
+        let mutated = false;
+        const removedDetails: Array<{
+          section: BudgetSectionKey;
+          category: BudgetCategory;
+        }> = [];
+
+        const nextSections: BudgetSections = {
+          expenses: current.sections.expenses.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              removedDetails.push({ section: "expenses", category: item });
+              return false;
+            }
+            return true;
+          }),
+          recurring: current.sections.recurring.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              removedDetails.push({ section: "recurring", category: item });
+              return false;
+            }
+            return true;
+          }),
+          savings: current.sections.savings.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              removedDetails.push({ section: "savings", category: item });
+              return false;
+            }
+            return true;
+          }),
+          debt: current.sections.debt.filter((item) => {
+            if (item.uuid === categoryId) {
+              mutated = true;
+              removedDetails.push({ section: "debt", category: item });
+              return false;
+            }
+            return true;
+          }),
+        };
+
+        if (options.budgetTargetId) {
+          removedDetails.forEach(({ section, category }) => {
+            const list = nextSections[section];
+            const targetIndex = list.findIndex(
+              (item) => item.uuid === options.budgetTargetId
+            );
+
+            if (targetIndex !== -1) {
+              const target = list[targetIndex];
+              list[targetIndex] = {
+                ...target,
+                planned:
+                  (target.planned ?? 0) + (category.planned ?? 0),
+                spent: (target.spent ?? 0) + (category.spent ?? 0),
+              };
+            }
+          });
+        }
+
+        if (!mutated && removedDetails.length === 0) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [currentMonthKey]: {
+            ...current,
+            sections: nextSections,
+          },
+        };
+      });
+
+      setEmojiPickerTarget((prev) => {
+        if (!prev) return prev;
+        return removedPositions.some(
+          (position) =>
+            position.section === prev.section && position.index === prev.index
+        )
+          ? null
+          : prev;
+      });
+    },
+    [
+      getValues,
+      sectionArrays,
+      setDraftValues,
+      setValue,
+      setMonthsData,
+      currentMonthKey,
+      setEmojiPickerTarget,
+    ]
+  );
+
   const toggleSection = useCallback((section: BudgetSectionKey) => {
     setCollapsedSections((prev) => ({
       ...prev,
@@ -996,51 +1334,61 @@ export default function BudgetPage() {
                 you do not need right now.
               </p>
             </div>
-            <Menu as="div" className="relative inline-block text-left">
-              <MenuButton as={Button} size="sm" variant="secondary">
-                Add category
-              </MenuButton>
-              <Transition
-                as={Fragment}
-                enter="transition ease-out duration-100"
-                enterFrom="transform opacity-0 scale-95"
-                enterTo="transform opacity-100 scale-100"
-                leave="transition ease-in duration-75"
-                leaveFrom="transform opacity-100 scale-100"
-                leaveTo="transform opacity-0 scale-95"
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Menu as="div" className="relative inline-block text-left">
+                <MenuButton as={Button} size="sm" variant="secondary">
+                  Add category
+                </MenuButton>
+                <Transition
+                  as={Fragment}
+                  enter="transition ease-out duration-100"
+                  enterFrom="transform opacity-0 scale-95"
+                  enterTo="transform opacity-100 scale-100"
+                  leave="transition ease-in duration-75"
+                  leaveFrom="transform opacity-100 scale-100"
+                  leaveTo="transform opacity-0 scale-95"
+                >
+                  <MenuItems className="absolute right-0 mt-2 w-52 origin-top-right space-y-1 rounded-2xl border border-emerald-200/60 bg-white p-2 shadow-[0_16px_32px_rgba(15,118,110,0.18)] focus:outline-none">
+                    {(
+                      [
+                        "expenses",
+                        "recurring",
+                        "savings",
+                        "debt",
+                      ] as BudgetSectionKey[]
+                    ).map((section) => (
+                      <MenuItem key={section}>
+                        {({ active }) => (
+                          <button
+                            type="button"
+                            onClick={() => handleAddCategory(section)}
+                            className={joinClassNames(
+                              "flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-medium",
+                              active
+                                ? "bg-emerald-100 text-emerald-900"
+                                : "text-emerald-800"
+                            )}
+                          >
+                            <span>{SECTION_CONFIG[section].label}</span>
+                            <span className="text-xs text-emerald-600">
+                              {SECTION_CONFIG[section].subtitle}
+                            </span>
+                          </button>
+                        )}
+                      </MenuItem>
+                    ))}
+                  </MenuItems>
+                </Transition>
+              </Menu>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-center text-emerald-700 hover:bg-emerald-50"
+                onClick={() => setCategoryManagerOpen(true)}
               >
-                <MenuItems className="absolute right-0 mt-2 w-52 origin-top-right space-y-1 rounded-2xl border border-emerald-200/60 bg-white p-2 shadow-[0_16px_32px_rgba(15,118,110,0.18)] focus:outline-none">
-                  {(
-                    [
-                      "expenses",
-                      "recurring",
-                      "savings",
-                      "debt",
-                    ] as BudgetSectionKey[]
-                  ).map((section) => (
-                    <MenuItem key={section}>
-                      {({ active }) => (
-                        <button
-                          type="button"
-                          onClick={() => handleAddCategory(section)}
-                          className={joinClassNames(
-                            "flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-medium",
-                            active
-                              ? "bg-emerald-100 text-emerald-900"
-                              : "text-emerald-800"
-                          )}
-                        >
-                          <span>{SECTION_CONFIG[section].label}</span>
-                          <span className="text-xs text-emerald-600">
-                            {SECTION_CONFIG[section].subtitle}
-                          </span>
-                        </button>
-                      )}
-                    </MenuItem>
-                  ))}
-                </MenuItems>
-              </Transition>
-            </Menu>
+                Manage categories
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -1371,6 +1719,13 @@ export default function BudgetPage() {
             );
             setEmojiPickerTarget(null);
           }}
+        />
+        <CategoryManagerDialog
+          isOpen={categoryManagerOpen}
+          onClose={() => setCategoryManagerOpen(false)}
+          notify={pushToast}
+          onCategoryUpdated={handleManagedCategoryUpdate}
+          onCategoryRemoved={handleManagedCategoryRemoved}
         />
       </section>
     </FormProvider>

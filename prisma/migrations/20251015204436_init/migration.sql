@@ -11,6 +11,9 @@ CREATE TYPE "BudgetStatus" AS ENUM ('DRAFT', 'FINALIZED');
 CREATE TYPE "TransactionType" AS ENUM ('EXPENSE', 'INCOME', 'TRANSFER');
 
 -- CreateEnum
+CREATE TYPE "TransactionOrigin" AS ENUM ('MANUAL', 'IMPORT', 'ADJUSTMENT');
+
+-- CreateEnum
 CREATE TYPE "RuleMatchField" AS ENUM ('DESCRIPTION', 'MERCHANT', 'RAW');
 
 -- CreateEnum
@@ -30,44 +33,8 @@ CREATE TABLE "User" (
 );
 
 -- CreateTable
-CREATE TABLE "Account" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
-    "providerAccountId" TEXT NOT NULL,
-    "refresh_token" TEXT,
-    "access_token" TEXT,
-    "expires_at" INTEGER,
-    "token_type" TEXT,
-    "scope" TEXT,
-    "id_token" TEXT,
-    "session_state" TEXT,
-
-    CONSTRAINT "Account_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "Session" (
-    "id" TEXT NOT NULL,
-    "sessionToken" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "expires" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VerificationToken" (
-    "identifier" TEXT NOT NULL,
-    "token" TEXT NOT NULL,
-    "expires" TIMESTAMP(3) NOT NULL
-);
-
--- CreateTable
 CREATE TABLE "Category" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "emoji" TEXT DEFAULT '✨',
     "section" "CategorySection" NOT NULL,
@@ -84,7 +51,6 @@ CREATE TABLE "Category" (
 -- CreateTable
 CREATE TABLE "Budget" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
     "month" TIMESTAMP(3) NOT NULL,
     "status" "BudgetStatus" NOT NULL DEFAULT 'DRAFT',
     "rolledFromBudgetId" TEXT,
@@ -127,7 +93,6 @@ CREATE TABLE "BudgetAllocation" (
 -- CreateTable
 CREATE TABLE "Transaction" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
     "categoryId" TEXT,
     "budgetId" TEXT,
     "importBatchId" TEXT,
@@ -135,10 +100,12 @@ CREATE TABLE "Transaction" (
     "postedOn" TIMESTAMP(3),
     "amount" DECIMAL(12,2) NOT NULL,
     "type" "TransactionType" NOT NULL,
+    "origin" "TransactionOrigin" NOT NULL DEFAULT 'MANUAL',
     "description" TEXT,
     "merchant" TEXT,
     "memo" TEXT,
     "externalId" TEXT,
+    "fingerprint" TEXT,
     "isPending" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -149,7 +116,6 @@ CREATE TABLE "Transaction" (
 -- CreateTable
 CREATE TABLE "ImportBatch" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
     "source" TEXT NOT NULL,
     "fileName" TEXT,
     "importedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -161,7 +127,6 @@ CREATE TABLE "ImportBatch" (
 -- CreateTable
 CREATE TABLE "Rule" (
     "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
     "categoryId" TEXT,
     "name" TEXT NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -177,32 +142,33 @@ CREATE TABLE "Rule" (
     CONSTRAINT "Rule_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "TransactionSplit" (
+    "id" TEXT NOT NULL,
+    "transactionId" TEXT NOT NULL,
+    "categoryId" TEXT,
+    "amount" DECIMAL(12,2) NOT NULL,
+    "memo" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TransactionSplit_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Account_provider_providerAccountId_key" ON "Account"("provider", "providerAccountId");
+CREATE INDEX "Category_section_sortOrder_idx" ON "Category"("section", "sortOrder");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Session_sessionToken_key" ON "Session"("sessionToken");
+CREATE INDEX "Category_archivedAt_idx" ON "Category"("archivedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "VerificationToken_token_key" ON "VerificationToken"("token");
+CREATE INDEX "Budget_status_idx" ON "Budget"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "VerificationToken_identifier_token_key" ON "VerificationToken"("identifier", "token");
-
--- CreateIndex
-CREATE INDEX "Category_userId_section_sortOrder_idx" ON "Category"("userId", "section", "sortOrder");
-
--- CreateIndex
-CREATE INDEX "Category_userId_archivedAt_idx" ON "Category"("userId", "archivedAt");
-
--- CreateIndex
-CREATE INDEX "Budget_userId_status_idx" ON "Budget"("userId", "status");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Budget_userId_month_key" ON "Budget"("userId", "month");
+CREATE UNIQUE INDEX "Budget_month_key" ON "Budget"("month");
 
 -- CreateIndex
 CREATE INDEX "BudgetIncome_budgetId_idx" ON "BudgetIncome"("budgetId");
@@ -217,31 +183,28 @@ CREATE INDEX "BudgetAllocation_categoryId_idx" ON "BudgetAllocation"("categoryId
 CREATE UNIQUE INDEX "BudgetAllocation_budgetId_categoryId_key" ON "BudgetAllocation"("budgetId", "categoryId");
 
 -- CreateIndex
-CREATE INDEX "Transaction_userId_occurredOn_idx" ON "Transaction"("userId", "occurredOn");
+CREATE UNIQUE INDEX "Transaction_fingerprint_key" ON "Transaction"("fingerprint");
 
 -- CreateIndex
-CREATE INDEX "Transaction_userId_categoryId_idx" ON "Transaction"("userId", "categoryId");
+CREATE INDEX "Transaction_occurredOn_idx" ON "Transaction"("occurredOn");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Transaction_userId_externalId_key" ON "Transaction"("userId", "externalId");
+CREATE INDEX "Transaction_categoryId_idx" ON "Transaction"("categoryId");
 
 -- CreateIndex
-CREATE INDEX "ImportBatch_userId_importedAt_idx" ON "ImportBatch"("userId", "importedAt");
+CREATE UNIQUE INDEX "Transaction_externalId_key" ON "Transaction"("externalId");
 
 -- CreateIndex
-CREATE INDEX "Rule_userId_isActive_priority_idx" ON "Rule"("userId", "isActive", "priority");
+CREATE INDEX "ImportBatch_importedAt_idx" ON "ImportBatch"("importedAt");
 
--- AddForeignKey
-ALTER TABLE "Account" ADD CONSTRAINT "Account_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- CreateIndex
+CREATE INDEX "Rule_isActive_priority_idx" ON "Rule"("isActive", "priority");
 
--- AddForeignKey
-ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- CreateIndex
+CREATE INDEX "TransactionSplit_transactionId_idx" ON "TransactionSplit"("transactionId");
 
--- AddForeignKey
-ALTER TABLE "Category" ADD CONSTRAINT "Category_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Budget" ADD CONSTRAINT "Budget_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- CreateIndex
+CREATE INDEX "TransactionSplit_categoryId_idx" ON "TransactionSplit"("categoryId");
 
 -- AddForeignKey
 ALTER TABLE "Budget" ADD CONSTRAINT "Budget_rolledFromBudgetId_fkey" FOREIGN KEY ("rolledFromBudgetId") REFERENCES "Budget"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -256,9 +219,6 @@ ALTER TABLE "BudgetAllocation" ADD CONSTRAINT "BudgetAllocation_budgetId_fkey" F
 ALTER TABLE "BudgetAllocation" ADD CONSTRAINT "BudgetAllocation_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -268,10 +228,10 @@ ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_budgetId_fkey" FOREIGN KEY
 ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_importBatchId_fkey" FOREIGN KEY ("importBatchId") REFERENCES "ImportBatch"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ImportBatch" ADD CONSTRAINT "ImportBatch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Rule" ADD CONSTRAINT "Rule_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Rule" ADD CONSTRAINT "Rule_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TransactionSplit" ADD CONSTRAINT "TransactionSplit_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TransactionSplit" ADD CONSTRAINT "TransactionSplit_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
