@@ -13,6 +13,7 @@ import {
   linkTransactionToBudget,
   resolveRuleCategory,
   syncBudgetSpentForMonth,
+  sanitizeMerchantName,
 } from "@budget/lib/transactions";
 
 export const runtime = "nodejs";
@@ -130,6 +131,9 @@ const extractFromRecord = (record: CsvRecord) => {
     normalized.get("name") ??
     description;
 
+  const rawMerchant = merchant ?? "";
+  const sanitizedMerchant = sanitizeMerchantName(rawMerchant);
+
   const type = amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
   const absoluteAmount = Math.abs(amount);
 
@@ -139,7 +143,8 @@ const extractFromRecord = (record: CsvRecord) => {
     amount: absoluteAmount,
     type,
     description: description ?? "",
-    merchant: merchant ?? "",
+    merchant: rawMerchant,
+    sanitizedMerchant,
     raw: JSON.stringify(record),
   };
 };
@@ -245,7 +250,9 @@ export async function POST(request: Request) {
             type: parsed.type,
             origin: TransactionOrigin.IMPORT,
             description: parsed.description ? parsed.description.trim() : null,
-            merchant: parsed.merchant ? parsed.merchant.trim() : null,
+            merchant: parsed.sanitizedMerchant
+              ? parsed.sanitizedMerchant
+              : null,
             memo: null,
             isPending: false,
             externalId: `import:${importBatch.id}:${index}`,

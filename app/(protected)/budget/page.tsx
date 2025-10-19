@@ -1141,157 +1141,98 @@ export default function BudgetPage() {
           </div>
         </header>
 
-        <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-          <section className="space-y-4 rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
-            <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-emerald-950">
-                  Expected income
-                </h2>
-                <p className="text-sm text-emerald-800/80">
-                  Add each source you plan to receive this month.
-                </p>
-              </div>
-              <Button size="sm" variant="primary" onClick={handleAddIncome}>
-                Add income
-              </Button>
-            </header>
-
-            <div className="space-y-3">
-              {incomeFields.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-emerald-300/60 bg-emerald-50/60 px-5 py-6 text-center text-sm text-emerald-800">
-                  No income planned yet. Start by adding your first source.
-                </div>
-              ) : null}
-
-              {incomeFields.map((field, index) => {
-                const highlight = recentlyAdded[field.uuid] ?? false;
-                const liveValue = draftValues.income.find(
-                  (item) => item.uuid === field.uuid
-                );
-
-                return (
-                  <div
-                    key={field.id}
-                    className={joinClassNames(
-                      "flex flex-col gap-3 rounded-2xl border bg-white/90 px-4 py-4 shadow-sm transition",
-                      highlight
-                        ? "border-emerald-500/60 bg-emerald-50/80 shadow-[0_10px_28px_rgba(16,118,110,0.22)]"
-                        : "border-transparent"
-                    )}
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-                      <div className="flex-1">
-                        <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
-                          Source
-                        </label>
-                        <input
-                          type="text"
-                          {...formMethods.register(
-                            `income.${index}.source` as const
-                          )}
-                          placeholder="e.g., Paycheck"
-                          className="mt-1 w-full rounded-xl border border-emerald-300/50 bg-white/95 px-3 py-2 text-sm font-medium text-emerald-900 shadow-inner focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                        />
-                      </div>
-                      <div className="w-full md:w-48">
-                        <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
-                          Amount
-                        </label>
-                        <Controller
-                          control={control}
-                          name={`income.${index}.amount` as const}
-                          render={({
-                            field: { value, onChange, onBlur, name },
-                          }) => (
-                            <CurrencyInput
-                              name={name}
-                              value={value ?? ""}
-                              onBlur={onBlur}
-                              onValueChange={(val) =>
-                                onChange(val && val.length > 0 ? val : null)
-                              }
-                            />
-                          )}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          handleRemoveIncome(
-                            index,
-                            liveValue?.source ?? "this income"
-                          )
-                        }
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <aside className="space-y-4 rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
-            <header>
+        <section className="space-y-4 rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
+          <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
               <h2 className="text-lg font-semibold text-emerald-950">
-                Month snapshot
+                Expected income
               </h2>
               <p className="text-sm text-emerald-800/80">
-                Quick look at what is planned, spent, and left.
+                Add each source you plan to receive this month.
               </p>
-            </header>
-            <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
-              <SummaryRow label="Total income" value={summary.totalIncome} />
-              <SummaryRow label="Planned" value={summary.totalPlanned} />
-              <SummaryRow label="Spent" value={summary.totalSpent} />
-              <SummaryRow
-                label="Remaining"
-                value={summary.remaining}
-                highlightNegative
-              />
             </div>
-            <div className="space-y-3">
-              {(
-                [
-                  "expenses",
-                  "recurring",
-                  "savings",
-                  "debt",
-                ] as BudgetSectionKey[]
-              ).map((section) => {
-                const data = summary.sections[section];
-                const progress =
-                  data.planned > 0 ? data.spent / data.planned : 0;
-                const isOverspent =
-                  data.spent > data.planned && data.planned > 0;
-                return (
-                  <div key={section} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm font-medium text-emerald-900">
-                      <span>{SECTION_CONFIG[section].label}</span>
-                      <span>{formatCurrency(data.spent)}</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-                      <div
-                        className={joinClassNames(
-                          "h-full rounded-full transition-all",
-                          isOverspent ? "bg-rose-400" : "bg-emerald-500"
+            <Button size="sm" variant="primary" onClick={handleAddIncome}>
+              Add income
+            </Button>
+          </header>
+
+          <div className="space-y-3">
+            {incomeFields.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-emerald-300/60 bg-emerald-50/60 px-5 py-6 text-center text-sm text-emerald-800">
+                No income planned yet. Start by adding your first source.
+              </div>
+            ) : null}
+
+            {incomeFields.map((field, index) => {
+              const highlight = recentlyAdded[field.uuid] ?? false;
+              const liveValue = draftValues.income.find(
+                (item) => item.uuid === field.uuid
+              );
+
+              return (
+                <div
+                  key={field.id}
+                  className={joinClassNames(
+                    "flex flex-col gap-3 rounded-2xl border bg-white/90 px-4 py-4 shadow-sm transition",
+                    highlight
+                      ? "border-emerald-500/60 bg-emerald-50/80 shadow-[0_10px_28px_rgba(16,118,110,0.22)]"
+                      : "border-transparent"
+                  )}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
+                        Source
+                      </label>
+                      <input
+                        type="text"
+                        {...formMethods.register(
+                          `income.${index}.source` as const
                         )}
-                        style={{ width: `${Math.min(progress, 1) * 100}%` }}
+                        placeholder="e.g., Paycheck"
+                        className="mt-1 w-full rounded-xl border border-emerald-300/50 bg-white/95 px-3 py-2 text-sm font-medium text-emerald-900 shadow-inner focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                       />
                     </div>
-                    <p className="text-xs text-emerald-800/80">
-                      {formatCurrency(data.planned - data.spent)} remaining
-                    </p>
+                    <div className="w-full md:w-48">
+                      <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
+                        Amount
+                      </label>
+                      <Controller
+                        control={control}
+                        name={`income.${index}.amount` as const}
+                        render={({
+                          field: { value, onChange, onBlur, name },
+                        }) => (
+                          <CurrencyInput
+                            name={name}
+                            value={value ?? ""}
+                            onBlur={onBlur}
+                            onValueChange={(val) =>
+                              onChange(val && val.length > 0 ? val : null)
+                            }
+                          />
+                        )}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() =>
+                        handleRemoveIncome(
+                          index,
+                          liveValue?.source ?? "this income"
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
                   </div>
-                );
-              })}
-            </div>
-          </aside>
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
         <div className="rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
           <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1514,6 +1455,7 @@ export default function BudgetPage() {
                                         name={name}
                                         value={value ?? ""}
                                         onBlur={onBlur}
+                                        disabled
                                         onValueChange={(val) =>
                                           onChange(
                                             val && val.length > 0 ? val : null
@@ -1663,6 +1605,59 @@ export default function BudgetPage() {
             })}
           </div>
         </div>
+
+        <aside className="space-y-4 rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
+          <header>
+            <h2 className="text-lg font-semibold text-emerald-950">
+              Month snapshot
+            </h2>
+            <p className="text-sm text-emerald-800/80">
+              Quick look at what is planned, spent, and left.
+            </p>
+          </header>
+          <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
+            <SummaryRow label="💵 Planned Income" value={summary.totalIncome} />
+            <SummaryRow
+              label="💲 Planned Expenses"
+              value={summary.totalPlanned}
+            />
+            <SummaryRow label="💸 Spent" value={summary.totalSpent} />
+            <SummaryRow
+              label="🧾 Remaining"
+              value={summary.remaining}
+              highlightNegative
+            />
+          </div>
+          <div className="space-y-3">
+            {(
+              ["expenses", "recurring", "savings", "debt"] as BudgetSectionKey[]
+            ).map((section) => {
+              const data = summary.sections[section];
+              const progress = data.planned > 0 ? data.spent / data.planned : 0;
+              const isOverspent = data.spent > data.planned && data.planned > 0;
+              return (
+                <div key={section} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm font-medium text-emerald-900">
+                    <span>{SECTION_CONFIG[section].label}</span>
+                    <span>{formatCurrency(data.spent)} spent</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-100">
+                    <div
+                      className={joinClassNames(
+                        "h-full rounded-full transition-all",
+                        isOverspent ? "bg-rose-400" : "bg-emerald-500"
+                      )}
+                      style={{ width: `${Math.min(progress, 1) * 100}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-emerald-800/80">
+                    {formatCurrency(data.planned - data.spent)} remaining
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
 
         <Modal
           isOpen={confirmState.isOpen}

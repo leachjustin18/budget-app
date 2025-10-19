@@ -9,6 +9,7 @@ import {
   getMonthKey,
   linkTransactionToBudget,
   parseMonthKey,
+  resolveRuleCategory,
   syncBudgetSpentForMonth,
   toISODate,
 } from "@budget/lib/transactions";
@@ -307,11 +308,44 @@ export async function POST(request: Request) {
 
   const defaultCategory = await ensureDefaultCategory(prisma);
 
-  const resolvedSplits = data.splits.map((split) => ({
-    categoryId: split.categoryId ?? defaultCategory.id,
-    amount: new Prisma.Decimal(split.amount.toFixed(2)),
-    memo: split.memo ?? null,
-  }));
+  const normalizedDescription = data.description?.trim() || null;
+  const normalizedMerchant = data.merchant?.trim() || null;
+  const normalizedMemo = data.memo?.trim() || null;
+
+  let ruleCategoryId: string | null = null;
+  const [firstSplit] = data.splits;
+  const shouldEvaluateRules =
+    data.splits.length === 1 &&
+    (!firstSplit?.categoryId || firstSplit.categoryId === defaultCategory.id);
+
+  if (shouldEvaluateRules) {
+    const activeRules = await prisma.rule.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (activeRules.length > 0) {
+      ruleCategoryId = resolveRuleCategory(activeRules, {
+        description: normalizedDescription,
+        merchant: normalizedMerchant,
+        raw: normalizedMemo,
+      });
+    }
+  }
+
+  const resolvedSplits = data.splits.map((split, index) => {
+    const fallbackCategoryId = split.categoryId ?? defaultCategory.id;
+    const categoryId =
+      ruleCategoryId && data.splits.length === 1 && index === 0
+        ? ruleCategoryId
+        : fallbackCategoryId;
+
+    return {
+      categoryId,
+      amount: new Prisma.Decimal(split.amount.toFixed(2)),
+      memo: split.memo ?? null,
+    };
+  });
 
   const transactionId = randomUUID();
   const externalId = `manual:${transactionId}`;
@@ -325,9 +359,9 @@ export async function POST(request: Request) {
         amount: new Prisma.Decimal(data.amount.toFixed(2)),
         type: data.type,
         origin: TransactionOrigin.MANUAL,
-        description: data.description?.trim() || null,
-        merchant: data.merchant?.trim() || null,
-        memo: data.memo?.trim() || null,
+        description: normalizedDescription,
+        merchant: normalizedMerchant,
+        memo: normalizedMemo,
         isPending: data.isPending ?? false,
         externalId,
         fingerprint,
