@@ -260,7 +260,7 @@ export default function SecureLayoutShell({
 
               <div className="flex flex-1 flex-col items-center gap-1 text-center">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-emerald-700/80">
-                  Our Family Budget
+                  Our Leach Family Budget
                 </p>
                 <h1 className="text-lg font-semibold text-emerald-950">
                   {activeItem?.label ?? "Budget Overview"}

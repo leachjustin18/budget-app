@@ -32,8 +32,6 @@ const COLORS = [
   "#ef4444",
 ];
 
-const RADIAN = Math.PI / 180;
-
 const renderCustomizedLabel = ({
   cx,
   percent,
@@ -94,8 +92,6 @@ const tooltipRenderer = ({
 
 export function CategorySharePie({ data }: CategorySharePieProps) {
   const items = data.filter((entry) => entry.actual > 0);
-  console.log("COLORS[0]", COLORS[0]);
-  console.log("items", items);
   if (!items.length) {
     return (
       <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-emerald-200/60 bg-emerald-50/60 text-sm text-emerald-900/70 dark:border-emerald-100/20 dark:bg-emerald-900/40 dark:text-emerald-100/70">

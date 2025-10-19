@@ -4,24 +4,13 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { Button } from "@budget/components/UI/Button";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
+import { useCache, useCategories } from "@budget/app/hooks/useCache";
+import {
+  type Category as CacheCategory,
+  type CategorySection,
+} from "@budget/app/providers/CacheProvider";
 
-type CategorySection = "EXPENSES" | "RECURRING" | "SAVINGS" | "DEBT";
-type RepeatCadence = "MONTHLY" | "ONCE";
-
-export type ManagedCategory = {
-  id: string;
-  name: string;
-  emoji: string;
-  section: CategorySection;
-  carryForwardDefault: boolean;
-  repeatCadenceDefault: RepeatCadence;
-  usage: {
-    budgets: number;
-    transactions: number;
-    transactionSplits: number;
-    rules: number;
-  };
-};
+export type ManagedCategory = CacheCategory;
 
 type ToastPayload = Omit<ToastProps, "id"> & { id?: string };
 
@@ -73,7 +62,14 @@ export default function CategoryManagerDialog({
   onCategoryRemoved,
   onCategoryUpdated,
 }: CategoryManagerDialogProps) {
-  const [categories, setCategories] = useState<ManagedCategory[]>([]);
+  const { actions } = useCache();
+  const { categories: categoryActions } = actions;
+  const {
+    refresh: refreshCategories,
+    update: updateCategory,
+    remove: removeCategory,
+  } = categoryActions;
+  const categoryList = useCategories();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -86,31 +82,25 @@ export default function CategoryManagerDialog({
   useEffect(() => {
     if (!isOpen) return;
 
+    if (categoryList.length > 0) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const abort = new AbortController();
+    let active = true;
     setLoading(true);
     setError(null);
 
-    fetch("/api/categories", {
-      cache: "no-store",
-      signal: abort.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          const payload = await response
-            .json()
-            .catch(() => ({ error: "Unable to load categories" }));
-          throw new Error(payload.error ?? "Unable to load categories");
-        }
-        return response.json() as Promise<{
-          categories: ManagedCategory[];
-        }>;
-      })
-      .then((payload) => {
-        setCategories(payload.categories ?? []);
+    refreshCategories(abort.signal)
+      .then(() => {
+        if (!active || abort.signal.aborted) return;
         setDrafts({});
+        setError(null);
       })
       .catch((cause) => {
-        if (abort.signal.aborted) return;
+        if (!active || abort.signal.aborted) return;
         console.error("Failed to load categories", cause);
         setError(
           cause instanceof Error
@@ -119,15 +109,18 @@ export default function CategoryManagerDialog({
         );
       })
       .finally(() => {
-        if (abort.signal.aborted) return;
+        if (!active || abort.signal.aborted) return;
         setLoading(false);
       });
 
-    return () => abort.abort();
-  }, [isOpen]);
+    return () => {
+      active = false;
+      abort.abort();
+    };
+  }, [categoryList.length, isOpen, refreshCategories]);
 
   const groupedCategories = useMemo(() => {
-    return categories.reduce<Record<CategorySection, ManagedCategory[]>>(
+    return categoryList.reduce<Record<CategorySection, ManagedCategory[]>>(
       (acc, category) => {
         acc[category.section].push(category);
         return acc;
@@ -139,13 +132,9 @@ export default function CategoryManagerDialog({
         DEBT: [],
       }
     );
-  }, [categories]);
+  }, [categoryList]);
 
-  const updateDraft = (
-    id: string,
-    field: "name" | "emoji",
-    value: string
-  ) => {
+  const updateDraft = (id: string, field: "name" | "emoji", value: string) => {
     setDrafts((prev) => ({
       ...prev,
       [id]: {
@@ -160,15 +149,15 @@ export default function CategoryManagerDialog({
     const nextName = draft?.name?.trim() || category.name;
     const nextEmoji = draft?.emoji?.trim() || category.emoji;
 
-    const payload: Record<string, string> = {};
+    const updatePayload: Partial<Pick<ManagedCategory, "name" | "emoji">> = {};
     if (nextName !== category.name) {
-      payload.name = nextName;
+      updatePayload.name = nextName;
     }
     if (nextEmoji !== category.emoji) {
-      payload.emoji = nextEmoji;
+      updatePayload.emoji = nextEmoji;
     }
 
-    if (Object.keys(payload).length === 0) {
+    if (Object.keys(updatePayload).length === 0) {
       notify?.({
         title: "No changes to save",
         description: "Update the name or emoji before saving.",
@@ -179,28 +168,7 @@ export default function CategoryManagerDialog({
 
     setSavingId(category.id);
     try {
-      const response = await fetch(`/api/categories/${category.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const body = await response
-          .json()
-          .catch(() => ({ error: "Unable to update category" }));
-        throw new Error(body.error ?? "Unable to update category");
-      }
-
-      const result = (await response.json()) as {
-        category: ManagedCategory;
-      };
-
-      setCategories((prev) =>
-        prev.map((item) =>
-          item.id === result.category.id ? result.category : item
-        )
-      );
+      const updated = await updateCategory(category.id, updatePayload);
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[category.id];
@@ -211,7 +179,7 @@ export default function CategoryManagerDialog({
         description: "Changes apply everywhere this category is used.",
         variant: "success",
       });
-      onCategoryUpdated?.(result.category);
+      onCategoryUpdated?.(updated);
     } catch (error) {
       console.error("Failed to update category", error);
       notify?.({
@@ -246,25 +214,10 @@ export default function CategoryManagerDialog({
     setDeletingId(category.id);
 
     try {
-      const response = await fetch(`/api/categories/${category.id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactionsTargetId: transactionsTargetId || undefined,
-          budgetTargetId: budgetTargetId || undefined,
-        }),
+      await removeCategory(category.id, {
+        transactionsTargetId: transactionsTargetId ?? undefined,
+        budgetTargetId: budgetTargetId ?? undefined,
       });
-
-      if (!response.ok) {
-        const body = await response
-          .json()
-          .catch(() => ({ error: "Unable to delete category" }));
-        throw new Error(body.error ?? "Unable to delete category");
-      }
-
-      setCategories((prev) =>
-        prev.filter((item) => item.id !== category.id)
-      );
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[category.id];
@@ -298,7 +251,7 @@ export default function CategoryManagerDialog({
     }
   };
 
-  const hasCategories = categories.length > 0;
+  const hasCategories = categoryList.length > 0;
 
   return (
     <Transition show={isOpen} as={Fragment}>
@@ -451,21 +404,28 @@ export default function CategoryManagerDialog({
                                       {transactionImpacts > 0 ? (
                                         <p>
                                           {transactionImpacts} transaction
-                                          {transactionImpacts === 1 ? "" : "s"}{" "}
+                                          {transactionImpacts === 1
+                                            ? ""
+                                            : "s"}{" "}
                                           currently use this category.
                                         </p>
                                       ) : null}
                                       {category.usage.budgets > 0 ? (
                                         <p>
-                                          {category.usage.budgets} budget allocation
-                                          {category.usage.budgets === 1 ? "" : "s"}{" "}
+                                          {category.usage.budgets} budget
+                                          allocation
+                                          {category.usage.budgets === 1
+                                            ? ""
+                                            : "s"}{" "}
                                           include it.
                                         </p>
                                       ) : null}
                                       {category.usage.rules > 0 ? (
                                         <p>
                                           {category.usage.rules} automation
-                                          {category.usage.rules === 1 ? "" : "s"}{" "}
+                                          {category.usage.rules === 1
+                                            ? ""
+                                            : "s"}{" "}
                                           reference this category.
                                         </p>
                                       ) : null}
@@ -533,8 +493,9 @@ export default function CategoryManagerDialog({
                           {deleteDraft.category.usage.transactions +
                             deleteDraft.category.usage.transactionSplits}{" "}
                           transactions, {deleteDraft.category.usage.budgets}{" "}
-                          budget allocations, and {deleteDraft.category.usage.rules}{" "}
-                          rules currently reference this category.
+                          budget allocations, and{" "}
+                          {deleteDraft.category.usage.rules} rules currently
+                          reference this category.
                         </p>
                         <p>
                           Leaving a reassignment blank will clear those
@@ -564,8 +525,10 @@ export default function CategoryManagerDialog({
                           className="w-full rounded-2xl border border-emerald-200/70 bg-white px-3 py-2 text-sm text-emerald-900 shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                         >
                           <option value="">Leave uncategorized</option>
-                          {categories
-                            .filter((item) => item.id !== deleteDraft.category.id)
+                          {categoryList
+                            .filter(
+                              (item) => item.id !== deleteDraft.category.id
+                            )
                             .map((item) => (
                               <option key={item.id} value={item.id}>
                                 {item.emoji} {item.name}
@@ -596,7 +559,7 @@ export default function CategoryManagerDialog({
                           className="w-full rounded-2xl border border-emerald-200/70 bg-white px-3 py-2 text-sm text-emerald-900 shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                         >
                           <option value="">Remove from budgets</option>
-                          {categories
+                          {categoryList
                             .filter(
                               (item) =>
                                 item.id !== deleteDraft.category.id &&
@@ -608,7 +571,7 @@ export default function CategoryManagerDialog({
                               </option>
                             ))}
                         </select>
-                        {categories.filter(
+                        {categoryList.filter(
                           (item) =>
                             item.id !== deleteDraft.category.id &&
                             item.section === deleteDraft.category.section

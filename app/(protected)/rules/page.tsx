@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
 } from "react";
@@ -15,6 +16,11 @@ import { Button } from "@budget/components/UI/Button";
 import { Switch } from "@budget/components/UI/Switch";
 import { joinClassNames } from "@budget/lib/helpers";
 import { getMonthKey } from "@budget/lib/transactions";
+import {
+  useCache,
+  useCategories,
+  useBudgetByMonth,
+} from "@budget/app/hooks/useCache";
 
 type CategorySection = "EXPENSES" | "RECURRING" | "SAVINGS" | "DEBT";
 type RepeatCadence = "MONTHLY" | "ONCE";
@@ -405,7 +411,11 @@ function RuleEditorDialog({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
-                  <Button variant="ghost" onClick={onClose} disabled={submitting}>
+                  <Button
+                    variant="ghost"
+                    onClick={onClose}
+                    disabled={submitting}
+                  >
                     Cancel
                   </Button>
                   <Button
@@ -480,11 +490,7 @@ function ToggleRuleDialog({
                 </div>
               ) : null}
               <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
-                <Button
-                  variant="ghost"
-                  onClick={onClose}
-                  disabled={submitting}
-                >
+                <Button variant="ghost" onClick={onClose} disabled={submitting}>
                   Cancel
                 </Button>
                 <Button
@@ -564,11 +570,7 @@ function DeleteRuleDialog({
                 </div>
               ) : null}
               <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
-                <Button
-                  variant="ghost"
-                  onClick={onClose}
-                  disabled={submitting}
-                >
+                <Button variant="ghost" onClick={onClose} disabled={submitting}>
                   Cancel
                 </Button>
                 <Button
@@ -638,7 +640,8 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }: RuleRowProps) {
 }
 
 export default function RulesPage() {
-  const [categories, setCategories] = useState<CategorySummary[]>([]);
+  const { actions } = useCache();
+  const categories = useCategories();
   const [rules, setRules] = useState<RuleRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -661,9 +664,6 @@ export default function RulesPage() {
   const [toggleSubmitting, setToggleSubmitting] = useState(false);
   const [deletePrompt, setDeletePrompt] = useState<RuleRecord | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [budgetCategoryIds, setBudgetCategoryIds] = useState<Set<string>>(
-    () => new Set()
-  );
 
   const dismissToast = useCallback((id?: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -689,84 +689,44 @@ export default function RulesPage() {
     return map;
   }, [categories]);
 
-  const attachCategory = useCallback(
-    (rule: RuleRecord): RuleRecord => {
-      if (rule.category) return rule;
-      const fallback = rule.categoryId
-        ? categoriesLookup.get(rule.categoryId) ?? null
-        : null;
-      return { ...rule, category: fallback };
-    },
-    [categoriesLookup]
-  );
+  const currentMonthKey = useMemo(() => getMonthKey(new Date()), []);
+  const budgetSnapshot = useBudgetByMonth(currentMonthKey);
+  const ensureBudget = actions.budgets.ensure;
+  const budgetEnsureAttempted = useRef(false);
 
-  const loadData = useCallback(async () => {
+  useEffect(() => {
+    if (budgetSnapshot || budgetEnsureAttempted.current) return;
+    budgetEnsureAttempted.current = true;
+    void ensureBudget(currentMonthKey).catch((error) => {
+      console.warn("Failed to ensure budget snapshot", error);
+      budgetEnsureAttempted.current = false;
+    });
+  }, [budgetSnapshot, currentMonthKey, ensureBudget]);
+
+  const budgetCategoryIds = useMemo(() => {
+    if (!budgetSnapshot) return new Set<string>();
+    const next = new Set<string>();
+    for (const section of Object.values(budgetSnapshot.sections)) {
+      for (const line of section) {
+        next.add(line.categoryId);
+      }
+    }
+    return next;
+  }, [budgetSnapshot]);
+
+  const loadRules = useCallback(async () => {
     setLoading(true);
     try {
-      const [categoriesResponse, rulesResponse] = await Promise.all([
-        fetch("/api/categories", { cache: "no-store" }),
-        fetch("/api/rules", { cache: "no-store" }),
-      ]);
-
-      if (!categoriesResponse.ok) {
-        throw new Error("Unable to load categories");
-      }
-
+      const rulesResponse = await fetch("/api/rules", { cache: "no-store" });
       if (!rulesResponse.ok) {
         throw new Error("Unable to load rules");
       }
-
-      const categoriesPayload = (await categoriesResponse.json()) as {
-        categories: Array<{
-          id: string;
-          name: string;
-          emoji: string;
-          section: CategorySection;
-        }>;
-      };
-
-      const sectionOrderIndex = SECTION_ORDER.reduce<Record<string, number>>(
-        (acc, section, index) => {
-          acc[section] = index;
-          return acc;
-        },
-        {}
-      );
-
-      const normalizedCategories = categoriesPayload.categories
-        .map((category) => ({
-          id: category.id,
-          name: category.name,
-          emoji: category.emoji ?? "✨",
-          section: category.section,
-        }))
-        .sort((a, b) => {
-          const sectionCompare =
-            (sectionOrderIndex[a.section] ?? 0) -
-            (sectionOrderIndex[b.section] ?? 0);
-          if (sectionCompare !== 0) return sectionCompare;
-          return a.name.localeCompare(b.name);
-        });
 
       const rulesPayload = (await rulesResponse.json()) as {
         rules: Array<RuleRecord>;
       };
 
-      const categoriesMap = new Map(
-        normalizedCategories.map((category) => [category.id, category])
-      );
-
-      const normalizedRules = rulesPayload.rules.map((rule) => ({
-        ...rule,
-        category:
-          rule.category ??
-          (rule.categoryId
-            ? categoriesMap.get(rule.categoryId) ?? null
-            : null),
-      }));
-
-      setCategories(normalizedCategories);
-      setRules(normalizedRules);
+      setRules(rulesPayload.rules);
     } catch (error) {
       console.error(error);
       pushToast({
@@ -780,43 +740,41 @@ export default function RulesPage() {
     }
   }, [pushToast]);
 
-  const monthKey = useMemo(() => getMonthKey(new Date()), []);
+  useEffect(() => {
+    void loadRules();
+  }, [loadRules]);
 
-  const loadBudgetSnapshot = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/budgets/${monthKey}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-      const payload = await response.json();
-      const sections = payload.budget?.sections;
-      if (!sections) return;
-      const next = new Set<string>();
-      for (const sectionKey of Object.keys(sections) as Array<string>) {
-        const list = sections[sectionKey] as Array<{ uuid: string }> | null;
-        if (!list) continue;
-        for (const category of list) {
-          next.add(category.uuid);
+  const rulesWithCategory = useMemo(() => {
+    return rules.map((rule) => {
+      if (rule.categoryId) {
+        const resolved = categoriesLookup.get(rule.categoryId) ?? null;
+        if (
+          resolved &&
+          rule.category &&
+          rule.category.id === resolved.id &&
+          rule.category.name === resolved.name &&
+          rule.category.emoji === resolved.emoji
+        ) {
+          return rule;
         }
+        if (
+          !resolved &&
+          (rule.category === null || rule.category === undefined)
+        ) {
+          return { ...rule, category: null };
+        }
+        return { ...rule, category: resolved };
       }
-      setBudgetCategoryIds(next);
-    } catch (error) {
-      console.warn("Failed to load budget snapshot", error);
-    }
-  }, [monthKey]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    void loadBudgetSnapshot();
-  }, [loadBudgetSnapshot]);
+      if (rule.category === undefined) {
+        return { ...rule, category: null };
+      }
+      return rule;
+    });
+  }, [rules, categoriesLookup]);
 
   const openCreateDialog = useCallback(
     (category?: CategorySummary) => {
-      const defaultCategoryId =
-        category?.id ?? categories[0]?.id ?? "";
+      const defaultCategoryId = category?.id ?? categories[0]?.id ?? "";
       setEditorMode("create");
       setEditorState({
         name: "",
@@ -831,19 +789,22 @@ export default function RulesPage() {
     [categories]
   );
 
-  const openEditDialog = useCallback((rule: RuleRecord) => {
-    setEditorMode("edit");
-    setEditorState({
-      id: rule.id,
-      name: rule.name,
-      categoryId: rule.categoryId ?? categories[0]?.id ?? "",
-      matchField: rule.matchField,
-      matchType: rule.matchType,
-      matchValue: rule.matchValue,
-      applyToExisting: false,
-    });
-    setEditorOpen(true);
-  }, [categories]);
+  const openEditDialog = useCallback(
+    (rule: RuleRecord) => {
+      setEditorMode("edit");
+      setEditorState({
+        id: rule.id,
+        name: rule.name,
+        categoryId: rule.categoryId ?? categories[0]?.id ?? "",
+        matchField: rule.matchField,
+        matchType: rule.matchType,
+        matchValue: rule.matchValue,
+        applyToExisting: false,
+      });
+      setEditorOpen(true);
+    },
+    [categories]
+  );
 
   const handleEditorSubmit = useCallback(
     async (state: RuleFormState) => {
@@ -868,8 +829,11 @@ export default function RulesPage() {
           }
 
           const payload = await response.json();
-          const newRule: RuleRecord = attachCategory(payload.rule);
-          setRules((prev) => [newRule, ...prev.filter((item) => item.id !== newRule.id)]);
+          const newRule: RuleRecord = payload.rule;
+          setRules((prev) => [
+            newRule,
+            ...prev.filter((item) => item.id !== newRule.id),
+          ]);
           pushToast({
             title: "Rule created",
             description: state.applyToExisting
@@ -898,9 +862,11 @@ export default function RulesPage() {
           }
 
           const payload = await response.json();
-          const updatedRule: RuleRecord = attachCategory(payload.rule);
+          const updatedRule: RuleRecord = payload.rule;
           setRules((prev) =>
-            prev.map((item) => (item.id === updatedRule.id ? updatedRule : item))
+            prev.map((item) =>
+              item.id === updatedRule.id ? updatedRule : item
+            )
           );
           pushToast({
             title: "Rule updated",
@@ -924,7 +890,7 @@ export default function RulesPage() {
         setEditorSubmitting(false);
       }
     },
-    [attachCategory, editorMode, pushToast]
+    [editorMode, pushToast]
   );
 
   const handleToggle = useCallback(
@@ -953,7 +919,7 @@ export default function RulesPage() {
         }
 
         const payload = await response.json();
-        const updatedRule: RuleRecord = attachCategory(payload.rule);
+        const updatedRule: RuleRecord = payload.rule;
         setRules((prev) =>
           prev.map((item) => (item.id === updatedRule.id ? updatedRule : item))
         );
@@ -978,7 +944,7 @@ export default function RulesPage() {
         setTogglePrompt(null);
       }
     },
-    [attachCategory, pushToast]
+    [pushToast]
   );
 
   const handleDelete = useCallback(async () => {
@@ -993,9 +959,7 @@ export default function RulesPage() {
         throw new Error("Failed to delete rule");
       }
 
-      setRules((prev) =>
-        prev.filter((item) => item.id !== deletePrompt.id)
-      );
+      setRules((prev) => prev.filter((item) => item.id !== deletePrompt.id));
       pushToast({
         title: "Rule deleted",
         description: "Future transactions will no longer use this automation.",
@@ -1024,13 +988,13 @@ export default function RulesPage() {
     );
     if (sectionCategories.length === 0) return null;
 
-    const sectionRulesCount = rules.filter(
+    const sectionRulesCount = rulesWithCategory.filter(
       (rule) => rule.category?.section === section
     ).length;
 
     const sectionElements = sectionCategories
       .map((category) => {
-        const categoryRules = rules.filter(
+        const categoryRules = rulesWithCategory.filter(
           (rule) => rule.categoryId === category.id
         );
         const hasCategoryRules = categoryRules.length > 0;

@@ -1,6 +1,5 @@
-import { auth } from "@/auth";
+import { auth } from "@budget/lib/auth";
 import { redirect } from "next/navigation";
-import SignInButton from "@budget/components/SignInButton";
 
 type CoinProps = {
   id: string;
@@ -134,6 +133,8 @@ export default async function Home() {
   if (session?.user?.email) {
     // already signed in → go to your app
     redirect("/budget"); // or "/budget"
+  } else {
+    redirect("/login");
   }
 
   // render login screen as the main page
@@ -170,29 +171,7 @@ export default async function Home() {
         </div>
       </div>
 
-      <div className="relative z-10 w-full max-w-lg rounded-[32px] border border-emerald-800/15 bg-white/85 px-8 py-10 shadow-[0_30px_70px_rgba(15,118,110,0.22)] backdrop-blur-xl">
-        <div className="space-y-6 text-center">
-          <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1 text-xs font-semibold tracking-[0.3em] text-emerald-700">
-            Our Family Budget
-          </p>
-          <h1 className="text-3xl font-semibold text-emerald-950">Welcome back</h1>
-          <p className="text-sm text-emerald-800">
-            Pick up where you left off—review envelope balances, log new
-            purchases, and keep the monthly plan on track.
-          </p>
-        </div>
-
-        <div className="mt-8 space-y-6">
-          <SignInButton />
-          <div className="rounded-2xl border border-emerald-700/20 bg-emerald-50/90 px-4 py-3 text-left text-xs text-emerald-800">
-            <p className="font-medium text-emerald-900">Heads up</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-emerald-700">
-              Google sign-in is limited to your approved accounts. Need another
-              email added? Update the whitelist in your config.
-            </p>
-          </div>
-        </div>
-      </div>
+      <div className="relative z-10 w-full max-w-lg rounded-[32px] border border-emerald-800/15 bg-white/85 px-8 py-10 shadow-[0_30px_70px_rgba(15,118,110,0.22)] backdrop-blur-xl"></div>
     </main>
   );
 }

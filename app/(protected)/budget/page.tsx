@@ -30,6 +30,8 @@ import CategoryManagerDialog, {
   type ManagedCategory,
 } from "@budget/app/(protected)/budget/CategoryManagerDialog";
 import UnsavedChangesToast from "@budget/app/(protected)/budget/UnsavedChangesToast";
+import { useCache } from "@budget/app/hooks/useCache";
+import type { BudgetSnapshot } from "@budget/app/providers/cacheTypes";
 
 type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
 type RepeatCadence = "monthly" | "once";
@@ -114,6 +116,13 @@ const SECTION_CONFIG: Record<
     accent: "from-amber-200 via-amber-50 to-white",
   },
 };
+
+const SECTION_KEYS: BudgetSectionKey[] = [
+  "expenses",
+  "recurring",
+  "savings",
+  "debt",
+];
 
 const createEmptyBudgetForm = (): BudgetFormValues => ({
   income: [],
@@ -286,6 +295,79 @@ const buildCarriedBudget = (previous: BudgetFormValues): BudgetFormValues => {
   };
 };
 
+const snapshotToBudgetForm = (snapshot: BudgetSnapshot): BudgetFormValues => {
+  const income = snapshot.income.map((plan) => ({
+    uuid: plan.id,
+    source: plan.source,
+    amount: plan.amount ?? null,
+  }));
+
+  const sections = SECTION_KEYS.reduce(
+    (acc, section) => {
+      const entries = snapshot.sections[section] ?? [];
+      acc[section] = entries.map((line) => ({
+        uuid: line.categoryId,
+        name: line.name,
+        emoji: line.emoji ?? "✨",
+        planned: line.planned ?? null,
+        spent: line.spent ?? null,
+        carryForward: line.carryForward,
+        repeat: line.repeat,
+      }));
+      return acc;
+    },
+    {
+      expenses: [] as BudgetCategory[],
+      recurring: [] as BudgetCategory[],
+      savings: [] as BudgetCategory[],
+      debt: [] as BudgetCategory[],
+    }
+  );
+
+  return { income, sections };
+};
+
+const budgetFormToSnapshot = (
+  monthKey: string,
+  values: BudgetFormValues,
+  exists: boolean
+): BudgetSnapshot => {
+  const income = values.income.map((line) => ({
+    id: line.uuid,
+    budgetId: monthKey,
+    source: line.source,
+    amount: line.amount ?? null,
+  }));
+
+  const sections = SECTION_KEYS.reduce(
+    (acc, section) => {
+      const entries = values.sections[section] ?? [];
+      acc[section] = entries.map((entry) => ({
+        id: `${monthKey}:${entry.uuid}`,
+        budgetId: monthKey,
+        categoryId: entry.uuid,
+        section,
+        name: entry.name,
+        emoji: entry.emoji ?? "✨",
+        planned: entry.planned ?? null,
+        spent: entry.spent ?? null,
+        carryForward: entry.carryForward,
+        repeat: entry.repeat,
+        notes: null,
+      }));
+      return acc;
+    },
+    {
+      expenses: [] as BudgetSnapshot["sections"]["expenses"],
+      recurring: [] as BudgetSnapshot["sections"]["recurring"],
+      savings: [] as BudgetSnapshot["sections"]["savings"],
+      debt: [] as BudgetSnapshot["sections"]["debt"],
+    }
+  );
+
+  return { monthKey, exists, income, sections };
+};
+
 const useSectionArray = (
   control: ReturnType<typeof useForm<BudgetFormValues>>["control"],
   section: BudgetSectionKey
@@ -296,6 +378,10 @@ const useSectionArray = (
   });
 
 export default function BudgetPage() {
+  const { actions, selectors } = useCache();
+  const { getBudgetSnapshot } = selectors;
+  const ensureBudget = actions.budgets.ensure;
+  const saveBudget = actions.budgets.save;
   const baseDate = useMemo(() => new Date(), []);
   const [monthsData, setMonthsData] = useState<
     Record<string, BudgetFormValues>
@@ -402,26 +488,30 @@ export default function BudgetPage() {
     async (monthKey: string) => {
       setLoadingMonths((prev) => ({ ...prev, [monthKey]: true }));
       try {
-        const response = await fetch(`/api/budgets/${monthKey}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Request failed with ${response.status}`);
+        let snapshot = getBudgetSnapshot(monthKey);
+        if (!snapshot) {
+          snapshot = await ensureBudget(monthKey);
         }
 
-        const payload = (await response.json()) as {
-          budget: BudgetFormValues;
-          exists: boolean;
-        };
+        if (snapshot) {
+          const sanitized = sanitizeBudgetValues(
+            snapshotToBudgetForm(snapshot)
+          );
+          setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
+          setMonthMetadata((prev) => ({
+            ...prev,
+            [monthKey]: { exists: snapshot.exists },
+          }));
+          return sanitized;
+        }
 
-        const sanitized = sanitizeBudgetValues(payload.budget);
-        setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
+        const blank = createEmptyBudgetForm();
+        setMonthsData((prev) => ({ ...prev, [monthKey]: blank }));
         setMonthMetadata((prev) => ({
           ...prev,
-          [monthKey]: { exists: payload.exists },
+          [monthKey]: { exists: false },
         }));
-        return sanitized;
+        return blank;
       } catch (error) {
         console.error("Failed to load budget", error);
         pushToast({
@@ -445,7 +535,7 @@ export default function BudgetPage() {
         });
       }
     },
-    [pushToast]
+    [ensureBudget, getBudgetSnapshot, pushToast]
   );
 
   useEffect(() => {
@@ -517,36 +607,30 @@ export default function BudgetPage() {
 
   const handleSaveBudget = useCallback(async () => {
     const sanitized = sanitizeBudgetValues(draftValues);
+    const currentExists = monthMetadata[currentMonthKey]?.exists ?? false;
+    const snapshot = budgetFormToSnapshot(
+      currentMonthKey,
+      sanitized,
+      currentExists
+    );
+
     setIsSaving(true);
     try {
-      const response = await fetch(`/api/budgets/${currentMonthKey}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ budget: sanitized }),
-      });
+      const normalized = await saveBudget(currentMonthKey, snapshot);
+      const normalizedForm = sanitizeBudgetValues(
+        snapshotToBudgetForm(normalized)
+      );
 
-      if (!response.ok) {
-        throw new Error(`Save failed with ${response.status}`);
-      }
-
-      const payload = (await response.json()) as {
-        budget: BudgetFormValues;
-        exists: boolean;
-      };
-
-      const normalized = sanitizeBudgetValues(payload.budget);
       setMonthsData((prev) => ({
         ...prev,
-        [currentMonthKey]: normalized,
+        [currentMonthKey]: normalizedForm,
       }));
       setMonthMetadata((prev) => ({
         ...prev,
-        [currentMonthKey]: { exists: true },
+        [currentMonthKey]: { exists: normalized.exists },
       }));
-      reset(normalized);
-      setDraftValues(normalized);
+      reset(normalizedForm);
+      setDraftValues(normalizedForm);
       setHasUnsavedChanges(false);
       pushToast({
         title: "Budget saved",
@@ -566,7 +650,14 @@ export default function BudgetPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [draftValues, currentMonthKey, reset, pushToast]);
+  }, [
+    draftValues,
+    currentMonthKey,
+    monthMetadata,
+    reset,
+    pushToast,
+    saveBudget,
+  ]);
 
   const handleCopyPreviousMonth = useCallback(async () => {
     const previousDate = addMonths(currentDate, -1);

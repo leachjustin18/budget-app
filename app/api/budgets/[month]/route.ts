@@ -6,8 +6,8 @@ import {
   RepeatCadence,
   TransactionType,
 } from "@prisma/client";
-import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { auth } from "@budget/lib/auth";
+import { prisma } from "@budget/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -512,7 +512,7 @@ export async function PUT(
   });
 
   return NextResponse.json({
-    month: params.month,
+    month: awaitedMonth,
     budget: sanitizeBudget(responsePayload),
     exists: true,
   });

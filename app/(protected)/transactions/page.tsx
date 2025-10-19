@@ -20,6 +20,15 @@ import TransactionForm, {
 } from "./TransactionForm";
 import { getMonthKey, parseMonthKey } from "@budget/lib/transactions";
 import Modal from "@budget/components/Modal";
+import {
+  useCache,
+  useCategories,
+  useBudgetByMonth,
+} from "@budget/app/hooks/useCache";
+import type {
+  Category,
+  CategorySection,
+} from "@budget/app/providers/CacheProvider";
 
 type TransactionType = "EXPENSE" | "INCOME" | "TRANSFER";
 type TransactionOrigin = "MANUAL" | "IMPORT" | "ADJUSTMENT";
@@ -48,20 +57,6 @@ type ApiTransaction = {
   splits: ApiSplit[];
 };
 
-type BudgetAllocation = {
-  id: string;
-  categoryId: string;
-  planned: number;
-  spent: number;
-  category: CategoryOption;
-};
-
-type BudgetPayload = {
-  id: string;
-  month: string;
-  allocations: BudgetAllocation[];
-};
-
 type ImportSummary = {
   imported: number;
   duplicates: number;
@@ -86,6 +81,16 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const formatCurrency = (value: number) => currencyFormatter.format(value);
+
+const mapCategoryToOption = (category: Category): CategoryOption => ({
+  id: category.id,
+  name: category.name,
+  emoji: category.emoji,
+  section: category.section,
+  carryForwardDefault: category.carryForwardDefault,
+  repeatCadenceDefault: category.repeatCadenceDefault,
+  usage: category.usage,
+});
 
 const mapTransactionToFormState = (
   transaction: ApiTransaction,
@@ -142,23 +147,10 @@ const formatTransactionOrigin = (origin: TransactionOrigin) => {
   }
 };
 
-const buildBudgetSnapshot = (budget: BudgetPayload | null): BudgetSnapshot => {
-  const snapshot: BudgetSnapshot = {};
-  if (!budget) return snapshot;
-  for (const allocation of budget.allocations) {
-    snapshot[allocation.categoryId] = {
-      planned: allocation.planned,
-      spent: allocation.spent,
-    };
-  }
-  return snapshot;
-};
-
 export default function TransactionsPage() {
+  const { actions } = useCache();
   const [month, setMonth] = useState(() => getMonthKey(new Date()));
   const [transactions, setTransactions] = useState<ApiTransaction[]>([]);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [budget, setBudget] = useState<BudgetPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -200,7 +192,40 @@ export default function TransactionsPage() {
   const [isWrongExtension, setIsWrongExtension] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const budgetByCategory = useMemo(() => buildBudgetSnapshot(budget), [budget]);
+  const categoryRecords = useCategories();
+  const categories = useMemo(
+    () => categoryRecords.map(mapCategoryToOption),
+    [categoryRecords]
+  );
+
+  const ensuredBudgetMonths = useRef<Set<string>>(new Set());
+  const ensureBudget = actions.budgets.ensure;
+  const categoryActions = actions.categories;
+  const budgetSnapshot = useBudgetByMonth(month);
+
+  useEffect(() => {
+    if (budgetSnapshot) return;
+    if (ensuredBudgetMonths.current.has(month)) return;
+    ensuredBudgetMonths.current.add(month);
+    void ensureBudget(month).catch((error) => {
+      console.warn("Failed to ensure budget snapshot", error);
+      ensuredBudgetMonths.current.delete(month);
+    });
+  }, [budgetSnapshot, ensureBudget, month]);
+
+  const budgetByCategory = useMemo(() => {
+    const snapshot: BudgetSnapshot = {};
+    if (!budgetSnapshot) return snapshot;
+    for (const sectionEntries of Object.values(budgetSnapshot.sections)) {
+      for (const allocation of sectionEntries) {
+        snapshot[allocation.categoryId] = {
+          planned: allocation.planned ?? 0,
+          spent: allocation.spent ?? 0,
+        };
+      }
+    }
+    return snapshot;
+  }, [budgetSnapshot]);
 
   const handleImportModalClosing = () => {
     setIsWrongExtension(false);
@@ -255,8 +280,6 @@ export default function TransactionsPage() {
 
         const payload = await response.json();
         setTransactions(payload.transactions ?? []);
-        setCategories(payload.categories ?? []);
-        setBudget(payload.budget ?? null);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unexpected error";
@@ -519,24 +542,13 @@ export default function TransactionsPage() {
 
     setCategorySaving(true);
     try {
-      const response = await fetch("/api/categories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: categoryForm.name.trim(),
-          section: categoryForm.section,
-        }),
+      const createdCategory = await categoryActions.create({
+        name: categoryForm.name.trim(),
+        section: categoryForm.section as CategorySection,
       });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error ?? "Unable to create category");
-      }
+      const created = mapCategoryToOption(createdCategory);
 
-      const payload = await response.json();
-      const created: CategoryOption = payload.category;
-
-      setCategories((prev) => [...prev, created]);
       pendingCategoryResolver.current?.(created);
       pendingCategoryResolver.current = undefined;
       setCategoryModalOpen(false);
@@ -556,7 +568,7 @@ export default function TransactionsPage() {
     } finally {
       setCategorySaving(false);
     }
-  }, [categoryForm, pushToast]);
+  }, [categoryActions, categoryForm, pushToast]);
 
   const handleTransactionEdit = useCallback((transaction: ApiTransaction) => {
     setEditingTransaction(transaction);

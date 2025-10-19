@@ -4,7 +4,7 @@ import { Button } from "@budget/components/UI/Button";
 
 export default function SignInButton() {
   const handleSignIn = () => {
-    void signIn("google", { callbackUrl: "/budget" });
+    void signIn("google");
   };
 
   return (
