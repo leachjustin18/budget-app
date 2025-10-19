@@ -34,28 +34,28 @@ const parseDate = (value?: string | null): Date | null => {
   const isoMatch = /^\d{4}-\d{2}-\d{2}$/;
   if (isoMatch.test(trimmed)) {
     const [year, month, day] = trimmed.split("-").map((part) => Number(part));
-    return new Date(Date.UTC(year, month - 1, day));
+    return new Date(year, month - 1, day);
   }
 
   const slashMatch = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
   if (slashMatch.test(trimmed)) {
     const [month, day, year] = trimmed.split("/").map((part) => Number(part));
     const normalizedYear = year < 100 ? 2000 + year : year;
-    return new Date(Date.UTC(normalizedYear, month - 1, day));
+    return new Date(normalizedYear, month - 1, day);
   }
 
   const dashMatch = /^\d{1,2}-\d{1,2}-\d{2,4}$/;
   if (dashMatch.test(trimmed)) {
     const [month, day, year] = trimmed.split("-").map((part) => Number(part));
     const normalizedYear = year < 100 ? 2000 + year : year;
-    return new Date(Date.UTC(normalizedYear, month - 1, day));
+    return new Date(normalizedYear, month - 1, day);
   }
 
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }
-  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 };
 
 const parseAmount = (value?: string | null): number | null => {
@@ -278,8 +278,8 @@ export async function POST(request: Request) {
       imported += 1;
       createdTransactionIds.push(createdId);
       affectedMonths.add(
-        `${parsed.occurredOn.getUTCFullYear()}-${String(
-          parsed.occurredOn.getUTCMonth() + 1
+        `${parsed.occurredOn.getFullYear()}-${String(
+          parsed.occurredOn.getMonth() + 1
         ).padStart(2, "0")}`
       );
     } catch (error) {
@@ -290,7 +290,7 @@ export async function POST(request: Request) {
   for (const monthKey of affectedMonths) {
     const [year, month] = monthKey.split("-").map((value) => Number(value));
     if (!Number.isInteger(year) || !Number.isInteger(month)) continue;
-    const date = new Date(Date.UTC(year, month - 1, 1));
+    const date = new Date(year, month - 1, 1);
     await syncBudgetSpentForMonth(date, prisma);
   }
 

@@ -356,7 +356,7 @@ const safePercent = (num: number, den: number) =>
 
 // local time date helpers
 const startOfLocalMonth = (date: Date) =>
-  new Date(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  new Date(date.getFullYear(), date.getMonth(), 1);
 
 const addMonthsLocal = (date: Date, amount: number) =>
   new Date(date.getFullYear(), date.getMonth() + amount, 1);

@@ -141,7 +141,9 @@ export async function GET(request: Request) {
     }
     const monthStart = resolvedMonth;
     const monthEnd = new Date(
-      Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1)
+      monthStart.getFullYear(),
+      monthStart.getMonth() + 1,
+      1
     );
     budgetMonth = monthStart;
     where.occurredOn = {

@@ -52,11 +52,11 @@ const buildFilter = (
 };
 
 const monthKey = (date: Date) =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
 const monthKeyToDate = (key: string) => {
   const [year, month] = key.split("-").map((value) => Number.parseInt(value, 10));
-  return new Date(Date.UTC(year, month - 1, 1));
+  return new Date(year, month - 1, 1);
 };
 
 export const applyRuleToExistingTransactions = async (

@@ -15,12 +15,8 @@ import { prisma } from "@budget/lib/prisma";
 type DecimalLike = Prisma.Decimal | number | string;
 
 const monthBoundary = (date: Date) => {
-  const monthStart = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)
-  );
-  const monthEnd = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)
-  );
+  const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+  const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 1);
   return { monthStart, monthEnd };
 };
 

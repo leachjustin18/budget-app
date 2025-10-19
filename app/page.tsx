@@ -1,5 +1,4 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@budget/app/api/auth/[...nextauth]/route";
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import SignInButton from "@budget/components/SignInButton";
 
@@ -130,7 +129,7 @@ const Coin = ({ id, className, symbol = "$" }: CoinProps) => {
 };
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   if (session?.user?.email) {
     // already signed in → go to your app

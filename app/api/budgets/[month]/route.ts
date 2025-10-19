@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { z } from "zod";
 import {
   CategorySection,
@@ -7,8 +6,8 @@ import {
   RepeatCadence,
   TransactionType,
 } from "@prisma/client";
-import { authOptions } from "@budget/app/api/auth/[...nextauth]/route";
-import { prisma } from "@budget/lib/prisma";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -138,11 +137,11 @@ const monthKeyToDate = (monthKey: string): Date | null => {
   if (Number.isNaN(year) || Number.isNaN(month) || month < 1 || month > 12) {
     return null;
   }
-  return new Date(Date.UTC(year, month - 1, 1));
+  return new Date(year, month - 1, 1);
 };
 
 const ensureUser = async () => {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email) {
     return { type: "error" as const, status: 401, message: "Unauthorized" };
   }
@@ -463,12 +462,8 @@ export async function PUT(
         budgetId: null,
         type: { in: [TransactionType.EXPENSE, TransactionType.INCOME] },
         occurredOn: {
-          gte: new Date(
-            Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1)
-          ),
-          lt: new Date(
-            Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 1)
-          ),
+          gte: new Date(monthDate.getFullYear(), monthDate.getMonth(), 1),
+          lt: new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1),
         },
         OR: [
           { categoryId: { in: Array.from(incomingAllocationKeys) } },

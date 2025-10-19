@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
 import type { ReactNode } from "react";
-import { authOptions } from "@budget/app/api/auth/[...nextauth]/route";
+import { auth } from "@/auth";
 import SecureLayoutShell from "./SecureLayoutShell";
 
 type LayoutProps = {
@@ -8,7 +7,7 @@ type LayoutProps = {
 };
 
 export default async function SecureLayout({ children }: LayoutProps) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
 
   return <SecureLayoutShell user={session?.user}>{children}</SecureLayoutShell>;
 }

@@ -1,27 +1,19 @@
-import type { Metadata, Viewport } from "next";
+import type { Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: {
-    default: "Leach Family Budget",
-    template: "%s | Family Budget",
-  },
-  applicationName: "Family Budget",
-  description:
-    "Plan, track, and review your household spending from anywhere, even offline.",
-
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Leach Family Budget",
-  },
-  formatDetection: {
-    telephone: false,
-  },
+export const metadata = {
+  title: "Family Budget",
+  description: "Track plans vs actuals with a clean, mobile-first PWA.",
+  manifest: "/manifest.webmanifest",
+  themeColor: "#0F172A",
   icons: {
-    icon: "/favicon.ico",
-    apple: "/icons/apple-icon-180x180.png",
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    other: [{ rel: "mask-icon", url: "/icons/icon.svg" }],
   },
 };
 
