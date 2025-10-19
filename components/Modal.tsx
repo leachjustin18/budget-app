@@ -10,22 +10,22 @@ import {
 import { Button, type Variant } from "@budget/components/UI/Button";
 
 export default function Modal({
-  isOpen,
+  isOpen = false,
   onClose,
   title,
   children,
-  onCancel,
+  showCancel = false,
   onSave,
-  isSaving,
+  isSaving = false,
   saveText,
   saveVariant,
   loadingText,
 }: {
   isOpen: boolean;
-  onClose: (value: boolean) => void;
+  onClose: () => void;
   title?: string;
   children?: ReactNode;
-  onCancel?: MouseEventHandler<HTMLButtonElement>;
+  showCancel?: boolean;
   onSave?: MouseEventHandler<HTMLButtonElement>;
   isSaving?: boolean;
   saveText?: string;
@@ -50,10 +50,10 @@ export default function Modal({
               {children}
             </Description>
             <div className="flex justify-end gap-3">
-              {onCancel ? (
+              {showCancel ? (
                 <Button
                   type="button"
-                  onClick={onCancel}
+                  onClick={onClose}
                   variant="ghost"
                   loading={isSaving}
                 >

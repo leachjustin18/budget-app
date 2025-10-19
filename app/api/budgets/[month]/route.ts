@@ -261,7 +261,10 @@ export async function PUT(
   request: Request,
   { params }: { params: { month: string } }
 ) {
-  const monthDate = monthKeyToDate(params.month);
+  const awaitedParams = await params;
+  const awaitedMonth = await awaitedParams.month;
+
+  const monthDate = monthKeyToDate(awaitedMonth);
   if (!monthDate) {
     return NextResponse.json(
       { error: "Invalid month format" },

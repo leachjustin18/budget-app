@@ -25,7 +25,7 @@ export default function CurrencyInput({
       onBlur={onBlur}
       onValueChange={onValueChange}
       decimalsLimit={2}
-      prefix="$"
+      intlConfig={{ locale: "en-US", currency: "USD" }}
       allowNegativeValue={false}
       className="mt-1 w-full rounded-xl border border-emerald-300/50 bg-white/95 px-3 py-2 text-right text-sm font-semibold text-emerald-900 shadow-inner focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-300"
     />

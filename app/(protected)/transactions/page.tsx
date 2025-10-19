@@ -747,8 +747,6 @@ export default function TransactionsPage() {
                 transaction.origin
               );
 
-              console.log("transactionOrigin", transactionOrigin);
-
               return (
                 <article
                   key={transaction.id}
@@ -849,15 +847,7 @@ export default function TransactionsPage() {
             occurredOn: "",
           });
         }}
-        onCancel={() => {
-          setDeleteState({
-            isOpen: false,
-            amount: 0,
-            merchant: "",
-            transactionId: "",
-            occurredOn: "",
-          });
-        }}
+        showCancel
         title="Delete Transaction"
         onSave={() => {
           handleDeletManualTransaction(deleteState.transactionId);
@@ -936,12 +926,8 @@ export default function TransactionsPage() {
 
       <Modal
         isOpen={isImportModalOpen}
-        onClose={() => {
-          if (!isImporting) {
-            setIsImportModalOpen(false);
-          }
-        }}
-        onCancel={handleImportModalClosing}
+        onClose={handleImportModalClosing}
+        showCancel
         title="Import transactions"
       >
         <p className="text-sm text-emerald-900/70">
@@ -1002,7 +988,7 @@ export default function TransactionsPage() {
         isOpen={categoryModalOpen}
         onClose={handleCategoryModalClose}
         title="Add a category"
-        onCancel={handleCategoryModalClose}
+        showCancel
         onSave={handleCategorySubmit}
         isSaving={categorySaving}
         saveText="Save category"

@@ -13,7 +13,9 @@ export default function Toast({
   className,
 }: ToastProps) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[120px] z-1000 flex flex-col items-center gap-3 px-4 sm:items-end">
+    <div
+      className={` ${className} pointer-events-none fixed inset-x-0 top-[120px] z-1000 flex flex-col items-center gap-3 px-4 sm:items-end`}
+    >
       <CustomToast
         variant={variant}
         icon={icon}
@@ -24,7 +26,7 @@ export default function Toast({
         persistent={persistent}
         title={title}
         description={description}
-        className={`w-full sm:max-w-sm ${className}`}
+        className={`${className} w-full sm:max-w-sm`}
       />
     </div>
   );

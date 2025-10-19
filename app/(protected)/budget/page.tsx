@@ -4,11 +4,14 @@ import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import {
   Dialog,
+  DialogPanel,
+  DialogTitle,
   Menu,
   MenuButton,
   MenuItem,
   MenuItems,
   Transition,
+  TransitionChild,
 } from "@headlessui/react";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -19,12 +22,14 @@ import {
 } from "react-hook-form";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
 import Toast from "@budget/components/Toast";
+import Modal from "@budget/components/Modal";
 import { Button } from "@budget/components/UI/Button";
 import { joinClassNames } from "@budget/lib/helpers";
 import CurrencyInput from "@budget/components/CurrencyInput";
 import CategoryManagerDialog, {
   type ManagedCategory,
-} from "./CategoryManagerDialog";
+} from "@budget/app/(protected)/budget/CategoryManagerDialog";
+import UnsavedChangesToast from "@budget/app/(protected)/budget/UnsavedChangesToast";
 
 type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
 type RepeatCadence = "monthly" | "once";
@@ -141,7 +146,7 @@ const sanitizeBudgetValues = (values: BudgetFormValues): BudgetFormValues => {
     .map((item) => ({
       ...item,
       source: item.source.trim(),
-      amount: item.amount ?? null,
+      amount: Number(item.amount) ?? null,
     }))
     .filter((item) => item.source.length > 0 || item.amount !== null);
 
@@ -151,8 +156,8 @@ const sanitizeBudgetValues = (values: BudgetFormValues): BudgetFormValues => {
         .map((item) => ({
           ...item,
           name: item.name.trim(),
-          planned: item.planned ?? null,
-          spent: item.spent ?? null,
+          planned: Number(item.planned) ?? null,
+          spent: Number(item.spent) ?? null,
         }))
         .filter(
           (item) =>
@@ -198,7 +203,7 @@ const calculateSummary = (values: BudgetFormValues): BudgetSummary => {
   };
 
   const totalIncome = values.income.reduce(
-    (sum, line) => sum + (line.amount ?? 0),
+    (sum, line) => Number(sum) + (Number(line.amount) ?? 0),
     0
   );
 
@@ -207,8 +212,8 @@ const calculateSummary = (values: BudgetFormValues): BudgetSummary => {
     categories.forEach((category) => {
       const planned = category.planned ?? 0;
       const spent = category.spent ?? 0;
-      sectionsSummary[sectionKey].planned += planned;
-      sectionsSummary[sectionKey].spent += spent;
+      sectionsSummary[sectionKey].planned += Number(planned);
+      sectionsSummary[sectionKey].spent += Number(spent);
     });
     sectionsSummary[sectionKey].remaining =
       sectionsSummary[sectionKey].planned - sectionsSummary[sectionKey].spent;
@@ -616,38 +621,6 @@ export default function BudgetPage() {
   ]);
 
   useEffect(() => {
-    if (hasUnsavedChanges) {
-      upsertToast({
-        id: "unsaved-changes",
-        title: "Unsaved changes",
-        description:
-          "Review your updates and save whenever you are ready to sync.",
-        variant: "warning",
-        persistent: true,
-        actions: (
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={handleSaveBudget}
-            loading={isSaving}
-            loadingText="Saving"
-          >
-            Save budget
-          </Button>
-        ),
-      });
-    } else {
-      dismissToast("unsaved-changes");
-    }
-  }, [
-    hasUnsavedChanges,
-    upsertToast,
-    dismissToast,
-    handleSaveBudget,
-    isSaving,
-  ]);
-
-  useEffect(() => {
     if (showFutureWarning) {
       upsertToast({
         id: "future-warning",
@@ -939,8 +912,7 @@ export default function BudgetPage() {
               const target = list[targetIndex];
               const nextPlanned =
                 (target.planned ?? 0) + (category.planned ?? 0);
-              const nextSpent =
-                (target.spent ?? 0) + (category.spent ?? 0);
+              const nextSpent = (target.spent ?? 0) + (category.spent ?? 0);
               list[targetIndex] = {
                 ...target,
                 planned: nextPlanned,
@@ -1027,8 +999,7 @@ export default function BudgetPage() {
               const target = list[targetIndex];
               list[targetIndex] = {
                 ...target,
-                planned:
-                  (target.planned ?? 0) + (category.planned ?? 0),
+                planned: (target.planned ?? 0) + (category.planned ?? 0),
                 spent: (target.spent ?? 0) + (category.spent ?? 0),
               };
             }
@@ -1238,26 +1209,25 @@ export default function BudgetPage() {
                               value={value ?? ""}
                               onBlur={onBlur}
                               onValueChange={(val) =>
-                                onChange(
-                                  val && val.length > 0 ? Number(val) : null
-                                )
+                                onChange(val && val.length > 0 ? val : null)
                               }
                             />
                           )}
                         />
                       </div>
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
+                        variant="destructive"
                         onClick={() =>
                           handleRemoveIncome(
                             index,
                             liveValue?.source ?? "this income"
                           )
                         }
-                        className="self-start rounded-xl border border-transparent px-3 py-2 text-sm text-emerald-700 transition hover:border-rose-300 hover:text-rose-600"
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 );
@@ -1515,9 +1485,7 @@ export default function BudgetPage() {
                                         onBlur={onBlur}
                                         onValueChange={(val) =>
                                           onChange(
-                                            val && val.length > 0
-                                              ? Number(val)
-                                              : null
+                                            val && val.length > 0 ? val : null
                                           )
                                         }
                                       />
@@ -1548,9 +1516,7 @@ export default function BudgetPage() {
                                         onBlur={onBlur}
                                         onValueChange={(val) =>
                                           onChange(
-                                            val && val.length > 0
-                                              ? Number(val)
-                                              : null
+                                            val && val.length > 0 ? val : null
                                           )
                                         }
                                       />
@@ -1558,8 +1524,9 @@ export default function BudgetPage() {
                                   />
                                 </div>
                               </div>
-                              <button
-                                type="button"
+                              <Button
+                                size="sm"
+                                variant="destructive"
                                 onClick={() =>
                                   handleRemoveCategory(
                                     section,
@@ -1567,10 +1534,9 @@ export default function BudgetPage() {
                                     liveCategory.name || "this category"
                                   )
                                 }
-                                className="self-start rounded-xl border border-transparent px-3 py-2 text-sm text-emerald-700 transition hover:border-rose-300 hover:text-rose-600"
                               >
-                                Delete
-                              </button>
+                                Remove
+                              </Button>
                             </div>
 
                             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1698,15 +1664,20 @@ export default function BudgetPage() {
           </div>
         </div>
 
-        <ConfirmDialog
+        <Modal
           isOpen={confirmState.isOpen}
           title={confirmState.title}
-          description={confirmState.description}
-          onCancel={closeConfirm}
-          onConfirm={() => {
+          onClose={closeConfirm}
+          showCancel
+          onSave={() => {
             confirmState.onConfirm?.();
+            closeConfirm();
           }}
-        />
+          saveVariant="destructive"
+          saveText="Yes, Delete 💣"
+        >
+          {confirmState.description}
+        </Modal>
 
         <EmojiPickerDialog
           target={emojiPickerTarget}
@@ -1726,6 +1697,13 @@ export default function BudgetPage() {
           notify={pushToast}
           onCategoryUpdated={handleManagedCategoryUpdate}
           onCategoryRemoved={handleManagedCategoryRemoved}
+        />
+
+        <UnsavedChangesToast
+          onClick={handleSaveBudget}
+          loading={isSaving}
+          loadingText="Saving..."
+          isOpen={hasUnsavedChanges}
         />
       </section>
     </FormProvider>
@@ -1760,78 +1738,6 @@ function SummaryRow({ label, value, highlightNegative }: SummaryRowProps) {
   );
 }
 
-type ConfirmDialogProps = {
-  isOpen: boolean;
-  title?: string;
-  description?: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-};
-
-function ConfirmDialog({
-  isOpen,
-  title,
-  description,
-  onCancel,
-  onConfirm,
-}: ConfirmDialogProps) {
-  return (
-    <Transition show={isOpen} as={Fragment}>
-      <Dialog onClose={onCancel} className="relative z-50">
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-150"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-100"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur-sm" />
-        </Transition.Child>
-
-        <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-150"
-            enterFrom="opacity-0 scale-95"
-            enterTo="opacity-100 scale-100"
-            leave="ease-in duration-100"
-            leaveFrom="opacity-100 scale-100"
-            leaveTo="opacity-0 scale-95"
-          >
-            <Dialog.Panel className="w-full max-w-sm space-y-4 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
-              <Dialog.Title className="text-lg font-semibold text-emerald-950">
-                {title ?? "Are you sure?"}
-              </Dialog.Title>
-              {description ? (
-                <Dialog.Description className="text-sm text-emerald-800/90">
-                  {description}
-                </Dialog.Description>
-              ) : null}
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button variant="ghost" size="sm" onClick={onCancel}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => {
-                    onConfirm();
-                    onCancel();
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </Dialog.Panel>
-          </Transition.Child>
-        </div>
-      </Dialog>
-    </Transition>
-  );
-}
-
 type EmojiPickerDialogProps = {
   target: EmojiPickerTarget;
   onClose: () => void;
@@ -1846,7 +1752,7 @@ function EmojiPickerDialog({
   return (
     <Transition show={Boolean(target)} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-150"
           enterFrom="opacity-0"
@@ -1856,10 +1762,10 @@ function EmojiPickerDialog({
           leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur-sm" />
-        </Transition.Child>
+        </TransitionChild>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
+          <TransitionChild
             as={Fragment}
             enter="ease-out duration-150"
             enterFrom="opacity-0 scale-95"
@@ -1868,10 +1774,10 @@ function EmojiPickerDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md overflow-hidden rounded-3xl border border-emerald-200/70 bg-white/95 p-4 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
-              <Dialog.Title className="mb-3 text-lg font-semibold text-emerald-950">
+            <DialogPanel className="w-full max-w-md overflow-hidden rounded-3xl border border-emerald-200/70 bg-white/95 p-4 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
+              <DialogTitle className="mb-3 text-lg font-semibold text-emerald-950">
                 Choose an emoji
-              </Dialog.Title>
+              </DialogTitle>
               <Picker
                 data={data}
                 onEmojiSelect={(emoji: { native: string }) => {
@@ -1884,8 +1790,8 @@ function EmojiPickerDialog({
                   Close
                 </Button>
               </div>
-            </Dialog.Panel>
-          </Transition.Child>
+            </DialogPanel>
+          </TransitionChild>
         </div>
       </Dialog>
     </Transition>
