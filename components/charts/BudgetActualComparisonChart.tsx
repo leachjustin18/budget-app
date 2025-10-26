@@ -134,6 +134,7 @@ export function BudgetActualComparisonChart({
           name="Actual expense"
           fill="rgba(239, 68, 68, 0.85)"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           <LabelList
             dataKey="actualExpense"
@@ -147,6 +148,7 @@ export function BudgetActualComparisonChart({
           name="Planned income"
           fill="rgba(45, 212, 191, 0.65)"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           <LabelList
             dataKey="plannedIncome"
@@ -160,6 +162,7 @@ export function BudgetActualComparisonChart({
           name="Actual income"
           fill="rgba(20, 184, 166, 0.9)"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           <LabelList
             dataKey="actualIncome"

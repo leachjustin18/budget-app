@@ -556,6 +556,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       amount: true,
       type: true,
       merchant: true,
+      merchantId: true,
+      merchantRef: {
+        select: {
+          id: true,
+          canonicalName: true,
+        },
+      },
       description: true,
       categoryId: true,
       splits: {
@@ -671,13 +678,20 @@ export async function getDashboardData(): Promise<DashboardData> {
   const dailyTotals = new Map<number, number>();
   const vendorTotals = new Map<
     string,
-    { label: string; total: number; count: number; transactionIds: string[] }
+    {
+      label: string;
+      total: number;
+      count: number;
+      transactionIds: string[];
+      merchantId: string | null;
+    }
   >();
   const topTransactionBuffer: Array<{
     id: string;
     occurredOn: Date;
     amount: number;
-    merchant: string;
+    merchantId: string | null;
+    merchantName: string;
     description: string | null;
   }> = [];
 
@@ -718,14 +732,18 @@ export async function getDashboardData(): Promise<DashboardData> {
       const day = trx.occurredOn.getDate();
       dailyTotals.set(day, (dailyTotals.get(day) ?? 0) + amount);
 
-      const vendorLabel =
-        trx.merchant?.trim() || trx.description?.trim() || "Unlabeled merchant";
-      const vendorKey = vendorLabel.toLowerCase();
+      const canonicalVendor =
+        trx.merchantRef?.canonicalName?.trim() ||
+        trx.merchant?.trim() ||
+        trx.description?.trim() ||
+        "Unlabeled merchant";
+      const vendorKey = canonicalVendor.toLowerCase();
       const vendor = vendorTotals.get(vendorKey) ?? {
-        label: vendorLabel,
+        label: canonicalVendor,
         total: 0,
         count: 0,
         transactionIds: [] as string[],
+        merchantId: trx.merchantRef?.id ?? trx.merchantId ?? null,
       };
       vendor.total += amount;
       vendor.count += 1;
@@ -736,7 +754,8 @@ export async function getDashboardData(): Promise<DashboardData> {
         id: trx.id,
         occurredOn: trx.occurredOn,
         amount,
-        merchant: vendorLabel,
+        merchantId: trx.merchantRef?.id ?? trx.merchantId ?? null,
+        merchantName: canonicalVendor,
         description: trx.description?.trim() ?? null,
       });
     }
@@ -1162,10 +1181,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     .map((entry) => ({
       id: entry.id,
       occurredOn: toLocalISODate(entry.occurredOn),
-      label: entry.description?.length ? entry.description : entry.merchant,
-      vendor: entry.merchant,
+      label: entry.description?.length ? entry.description : entry.merchantName,
+      vendor: entry.merchantName,
       amount: round(entry.amount),
-      href: `/transactions?search=${encodeURIComponent(entry.merchant)}`,
+      href: `/transactions?search=${encodeURIComponent(entry.merchantName)}`,
     }));
 
   // Goals (savings/debt) from category entries

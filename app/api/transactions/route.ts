@@ -12,7 +12,9 @@ import {
   resolveRuleCategory,
   syncBudgetSpentForMonth,
   toISODate,
+  sanitizeMerchantName,
 } from "@budget/lib/transactions";
+import { resolveMerchant } from "@budget/lib/merchantService";
 
 const querySchema = z.object({
   month: z.string().optional(),
@@ -35,6 +37,7 @@ const transactionInclude = {
     orderBy: { createdAt: "asc" as const },
   },
   importBatch: true,
+  merchantRef: true,
 } satisfies Prisma.TransactionInclude;
 
 const serializeAmount = (amount: Prisma.Decimal) => Number(amount.toFixed(2));
@@ -43,34 +46,47 @@ const mapTransaction = (
   transaction: Prisma.TransactionGetPayload<{
     include: typeof transactionInclude;
   }>
-) => ({
-  id: transaction.id,
-  occurredOn: toISODate(transaction.occurredOn),
-  postedOn: transaction.postedOn ? toISODate(transaction.postedOn) : null,
-  amount: serializeAmount(transaction.amount),
-  type: transaction.type,
-  origin: transaction.origin,
-  description: transaction.description ?? "",
-  merchant: transaction.merchant ?? "",
-  memo: transaction.memo ?? "",
-  categoryId: transaction.categoryId,
-  importBatchId: transaction.importBatchId,
-  isPending: transaction.isPending,
-  budgetId: transaction.budgetId,
-  splits: transaction.splits.map((split) => ({
-    id: split.id,
-    amount: serializeAmount(split.amount),
-    memo: split.memo ?? "",
-    category: split.category
+): Record<string, unknown> => {
+  const canonicalMerchant =
+    transaction.merchantRef?.canonicalName ?? transaction.merchant ?? "";
+
+  return {
+    id: transaction.id,
+    occurredOn: toISODate(transaction.occurredOn),
+
+    amount: serializeAmount(transaction.amount),
+    type: transaction.type,
+    origin: transaction.origin,
+    description: transaction.description ?? "",
+    merchantName: canonicalMerchant,
+    merchantId: transaction.merchantRef?.id ?? null,
+    merchant: transaction.merchantRef
       ? {
-          id: split.category.id,
-          name: split.category.name,
-          emoji: split.category.emoji ?? "✨",
-          section: split.category.section,
+          id: transaction.merchantRef.id,
+          canonicalName: transaction.merchantRef.canonicalName,
+          yelpId: transaction.merchantRef.yelpId,
         }
       : null,
-  })),
-});
+    memo: transaction.memo ?? "",
+    categoryId: transaction.categoryId,
+    importBatchId: transaction.importBatchId,
+    isPending: transaction.isPending,
+    budgetId: transaction.budgetId,
+    splits: transaction.splits.map((split) => ({
+      id: split.id,
+      amount: serializeAmount(split.amount),
+      memo: split.memo ?? "",
+      category: split.category
+        ? {
+            id: split.category.id,
+            name: split.category.name,
+            emoji: split.category.emoji ?? "✨",
+            section: split.category.section,
+          }
+        : null,
+    })),
+  };
+};
 
 const buildSearchFilter = (search: string): Prisma.TransactionWhereInput => {
   const trimmed = search.trim();
@@ -80,6 +96,11 @@ const buildSearchFilter = (search: string): Prisma.TransactionWhereInput => {
 
   filters.push({
     merchant: { contains: trimmed, mode: "insensitive" },
+  });
+  filters.push({
+    merchantRef: {
+      canonicalName: { contains: trimmed, mode: "insensitive" },
+    },
   });
   filters.push({
     description: { contains: trimmed, mode: "insensitive" },
@@ -231,7 +252,7 @@ const splitSchema = z.object({
 
 const transactionPayloadSchema = z.object({
   occurredOn: z.string().min(1),
-  postedOn: z.string().optional(),
+
   amount: z.number().positive(),
   type: z.nativeEnum(TransactionType).default(TransactionType.EXPENSE),
   merchant: z.string().optional(),
@@ -262,16 +283,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const postedOn = data.postedOn
-    ? new Date(`${data.postedOn}T00:00:00.000Z`)
-    : null;
-  if (postedOn && Number.isNaN(postedOn.getTime())) {
-    return NextResponse.json(
-      { error: "Invalid postedOn date" },
-      { status: 400 }
-    );
-  }
-
   const sumOfSplits = data.splits.reduce((sum, split) => sum + split.amount, 0);
   const epsilon = 0.01;
   if (Math.abs(sumOfSplits - data.amount) > epsilon) {
@@ -285,11 +296,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const rawMerchant = data.merchant?.trim() || null;
+  const normalizedDescription = data.description?.trim() || null;
+  const normalizedMemo = data.memo?.trim() || null;
+
+  const fingerprintMerchant = rawMerchant
+    ? sanitizeMerchantName(rawMerchant)
+    : rawMerchant;
+
   const fingerprint = computeTransactionFingerprint({
     occurredOn,
-    postedOn,
+
     amount: data.amount,
-    merchant: data.merchant,
+    merchant: fingerprintMerchant,
     description: data.description,
   });
 
@@ -310,10 +329,6 @@ export async function POST(request: Request) {
 
   const defaultCategory = await ensureDefaultCategory(prisma);
 
-  const normalizedDescription = data.description?.trim() || null;
-  const normalizedMerchant = data.merchant?.trim() || null;
-  const normalizedMemo = data.memo?.trim() || null;
-
   let ruleCategoryId: string | null = null;
   const [firstSplit] = data.splits;
   const shouldEvaluateRules =
@@ -329,7 +344,7 @@ export async function POST(request: Request) {
     if (activeRules.length > 0) {
       ruleCategoryId = resolveRuleCategory(activeRules, {
         description: normalizedDescription,
-        merchant: normalizedMerchant,
+        merchant: rawMerchant,
         raw: normalizedMemo,
       });
     }
@@ -353,16 +368,24 @@ export async function POST(request: Request) {
   const externalId = `manual:${transactionId}`;
 
   const result = await prisma.$transaction(async (tx) => {
+    const merchantResolution = rawMerchant
+      ? await resolveMerchant(rawMerchant, { tx })
+      : null;
+
+    const canonicalMerchant =
+      merchantResolution?.canonicalName ?? rawMerchant ?? null;
+
     const created = await tx.transaction.create({
       data: {
         id: transactionId,
         occurredOn,
-        postedOn,
+
         amount: new Prisma.Decimal(data.amount.toFixed(2)),
         type: data.type,
         origin: TransactionOrigin.MANUAL,
         description: normalizedDescription,
-        merchant: normalizedMerchant,
+        merchant: canonicalMerchant,
+        merchantId: merchantResolution?.merchantId ?? null,
         memo: normalizedMemo,
         isPending: data.isPending ?? false,
         externalId,

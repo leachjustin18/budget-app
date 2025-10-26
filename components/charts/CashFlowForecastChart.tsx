@@ -103,6 +103,7 @@ export function CashFlowForecastChart({
           dataKey="expense"
           name="Projected expenses"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           {series.map((month) => {
             const isFuture = month.isFuture;
@@ -110,15 +111,9 @@ export function CashFlowForecastChart({
             const fill = atRisk
               ? "rgba(248,113,113,0.9)"
               : isFuture
-                ? "rgba(45,212,191,0.7)"
-                : "rgba(16,185,129,0.85)";
-            return (
-              <Cell
-                key={month.monthKey}
-                cursor="pointer"
-                fill={fill}
-              />
-            );
+              ? "rgba(45,212,191,0.7)"
+              : "rgba(16,185,129,0.85)";
+            return <Cell key={month.monthKey} cursor="pointer" fill={fill} />;
           })}
         </Bar>
         <Line
@@ -129,6 +124,7 @@ export function CashFlowForecastChart({
           strokeWidth={2}
           dot={{ r: 3 }}
           activeDot={{ r: 5 }}
+          isAnimationActive
         />
         <Line
           type="monotone"
@@ -138,6 +134,7 @@ export function CashFlowForecastChart({
           strokeDasharray="4 4"
           strokeWidth={2}
           dot={{ r: 3 }}
+          isAnimationActive
         />
       </ComposedChart>
     </ResponsiveContainer>

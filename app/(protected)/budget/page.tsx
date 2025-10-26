@@ -31,7 +31,9 @@ import CategoryManagerDialog, {
 } from "@budget/app/(protected)/budget/CategoryManagerDialog";
 import UnsavedChangesToast from "@budget/app/(protected)/budget/UnsavedChangesToast";
 import { useCache } from "@budget/app/hooks/useCache";
-import type { BudgetSnapshot } from "@budget/app/providers/cacheTypes";
+import type { BudgetSnapshot } from "@budget/lib/cache/types";
+import { getMonthStatus } from "@budget/lib/monthStatus";
+import { MonthStatusBadge } from "@budget/components/MonthStatusBadge";
 
 type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
 type RepeatCadence = "monthly" | "once";
@@ -426,6 +428,10 @@ export default function BudgetPage() {
     () => getMonthKey(currentDate),
     [currentDate]
   );
+  const isViewingCurrentMonth = useMemo(() => {
+    const todayKey = getMonthKey(new Date());
+    return todayKey === currentMonthKey;
+  }, [currentMonthKey]);
 
   const baseline = useMemo(
     () => monthsData[currentMonthKey] ?? createEmptyBudgetForm(),
@@ -736,6 +742,14 @@ export default function BudgetPage() {
   }, [showFutureWarning, upsertToast, dismissToast, handleCopyPreviousMonth]);
 
   const summary = useMemo(() => calculateSummary(draftValues), [draftValues]);
+  const statusSnapshot = getBudgetSnapshot(currentMonthKey)
+    ? getBudgetSnapshot(currentMonthKey)
+    : budgetFormToSnapshot(
+        currentMonthKey,
+        draftValues,
+        monthMetadata[currentMonthKey]?.exists ?? false
+      );
+  const currentMonthStatus = getMonthStatus(currentMonthKey, statusSnapshot);
 
   const monthLabel = useMemo(
     () => monthFormatter.format(currentDate),
@@ -1212,6 +1226,9 @@ export default function BudgetPage() {
             </button>
           </div>
           <div className="flex flex-col items-start gap-3 sm:items-end">
+            {isViewingCurrentMonth ? (
+              <MonthStatusBadge status={currentMonthStatus} />
+            ) : null}
             <div className="flex items-center gap-2">
               <div className="h-1.5 w-24 rounded-full bg-emerald-500/30">
                 <div
@@ -1706,19 +1723,6 @@ export default function BudgetPage() {
               Quick look at what is planned, spent, and left.
             </p>
           </header>
-          <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
-            <SummaryRow label="💵 Planned Income" value={summary.totalIncome} />
-            <SummaryRow
-              label="💲 Planned Expenses"
-              value={summary.totalPlanned}
-            />
-            <SummaryRow label="💸 Spent" value={summary.totalSpent} />
-            <SummaryRow
-              label="🧾 Remaining"
-              value={summary.remaining}
-              highlightNegative
-            />
-          </div>
           <div className="space-y-3">
             {(
               ["expenses", "recurring", "savings", "debt"] as BudgetSectionKey[]
@@ -1729,7 +1733,10 @@ export default function BudgetPage() {
               return (
                 <div key={section} className="space-y-1">
                   <div className="flex items-center justify-between text-sm font-medium text-emerald-900">
-                    <span>{SECTION_CONFIG[section].label}</span>
+                    <span>
+                      {formatCurrency(data.planned)} is planned for{" "}
+                      {SECTION_CONFIG[section].label}
+                    </span>
                     <span>{formatCurrency(data.spent)} spent</span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-emerald-100">
@@ -1747,6 +1754,20 @@ export default function BudgetPage() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
+            <SummaryRow label="💵 Planned Income" value={summary.totalIncome} />
+            <SummaryRow
+              label="💲 Planned Expenses"
+              value={summary.totalPlanned}
+            />
+            <SummaryRow label="💸 Spent" value={summary.totalSpent} />
+            <SummaryRow
+              label="🧾 Remaining"
+              value={summary.remaining}
+              highlightNegative
+            />
           </div>
         </aside>
 

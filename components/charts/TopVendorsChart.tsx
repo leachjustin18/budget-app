@@ -85,10 +85,19 @@ export function TopVendorsChart({
               type="category"
               dataKey="label"
               width={160}
-              tick={{ fill: "rgba(15,118,110,0.85)", fontSize: 13, fontWeight: 600 }}
+              tick={{
+                fill: "rgba(15,118,110,0.85)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
             />
             <Tooltip content={tooltipRenderer} />
-            <Bar dataKey="total" radius={[8, 8, 8, 8]} maxBarSize={26}>
+            <Bar
+              dataKey="total"
+              radius={[8, 8, 8, 8]}
+              maxBarSize={26}
+              isAnimationActive
+            >
               {topVendors.map((vendor, index) => (
                 <Cell
                   key={vendor.key}

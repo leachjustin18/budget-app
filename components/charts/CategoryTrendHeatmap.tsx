@@ -198,6 +198,7 @@ export function CategoryTrendHeatmap({
             data={category.points}
             shape={<CustomSquare />}
             name={category.name}
+            isAnimationActive
           />
         ))}
       </ScatterChart>

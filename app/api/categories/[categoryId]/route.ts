@@ -1,3 +1,4 @@
+// app/api/categories/[categoryId]/route.ts
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { CategorySection, Prisma, RepeatCadence } from "@prisma/client";
@@ -6,9 +7,9 @@ import { prisma } from "@budget/lib/prisma";
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   emoji: z.string().optional(),
-  section: z.nativeEnum(CategorySection).optional(),
+  section: z.enum(CategorySection).optional(),
   carryForwardDefault: z.boolean().optional(),
-  repeatCadenceDefault: z.nativeEnum(RepeatCadence).optional(),
+  repeatCadenceDefault: z.enum(RepeatCadence).optional(),
 });
 
 const deleteSchema = z
@@ -53,12 +54,12 @@ const usageSelect = {
   rules: true,
 } as const;
 
+// ✅ PATCH: use RouteContext and await ctx.params
 export async function PATCH(
   request: Request,
-  { params }: { params: { categoryId: string } }
+  ctx: RouteContext<"/api/categories/[categoryId]">
 ) {
-  const awaitedParams = await params;
-  const categoryId = awaitedParams.categoryId;
+  const { categoryId } = await ctx.params;
   if (!categoryId) {
     return NextResponse.json({ error: "Category id missing" }, { status: 400 });
   }
@@ -98,15 +99,11 @@ export async function PATCH(
         where: { id: categoryId, archivedAt: null },
       });
 
-      if (!category) {
-        throw new Error("NOT_FOUND");
-      }
+      if (!category) throw new Error("NOT_FOUND");
 
       const payload: Prisma.CategoryUpdateInput = {};
 
-      if (updates.name !== undefined) {
-        payload.name = updates.name.trim();
-      }
+      if (updates.name !== undefined) payload.name = updates.name.trim();
 
       if (updates.emoji !== undefined) {
         const trimmed = updates.emoji.trim();
@@ -122,21 +119,17 @@ export async function PATCH(
         payload.sortOrder = (nextSortOrder._max.sortOrder ?? 0) + 10;
       }
 
-      if (updates.carryForwardDefault !== undefined) {
+      if (updates.carryForwardDefault !== undefined)
         payload.carryForwardDefault = updates.carryForwardDefault;
-      }
 
-      if (updates.repeatCadenceDefault !== undefined) {
+      if (updates.repeatCadenceDefault !== undefined)
         payload.repeatCadenceDefault = updates.repeatCadenceDefault;
-      }
 
-      const result = await tx.category.update({
+      return tx.category.update({
         where: { id: categoryId },
         data: payload,
         include: { _count: { select: usageSelect } },
       });
-
-      return result;
     });
 
     return NextResponse.json({ category: serializeCategory(updated) });
@@ -155,12 +148,12 @@ export async function PATCH(
   }
 }
 
+// ✅ DELETE: same fix—use RouteContext and await ctx.params
 export async function DELETE(
   request: Request,
-  { params }: { params: { categoryId: string } }
+  ctx: RouteContext<"/api/categories/[categoryId]">
 ) {
-  const awaitedParams = await params;
-  const categoryId = awaitedParams.categoryId;
+  const { categoryId } = await ctx.params;
   if (!categoryId) {
     return NextResponse.json({ error: "Category id missing" }, { status: 400 });
   }
@@ -193,19 +186,16 @@ export async function DELETE(
         include: { _count: { select: usageSelect } },
       });
 
-      if (!category) {
-        throw new Error("NOT_FOUND");
-      }
+      if (!category) throw new Error("NOT_FOUND");
 
-      let transactionsTarget = null;
+      let transactionsTarget: { id: string } | null = null;
       if (transactionsTargetId) {
         transactionsTarget = await tx.category.findFirst({
           where: { id: transactionsTargetId, archivedAt: null },
           select: { id: true },
         });
-        if (!transactionsTarget) {
+        if (!transactionsTarget)
           throw new Error("TRANSACTION_TARGET_NOT_FOUND");
-        }
       }
 
       let budgetTarget: { id: string; section: CategorySection } | null = null;
@@ -214,9 +204,7 @@ export async function DELETE(
           where: { id: budgetTargetId, archivedAt: null },
           select: { id: true, section: true },
         });
-        if (!budgetTarget) {
-          throw new Error("BUDGET_TARGET_NOT_FOUND");
-        }
+        if (!budgetTarget) throw new Error("BUDGET_TARGET_NOT_FOUND");
       }
 
       if (
@@ -297,9 +285,7 @@ export async function DELETE(
             }
           }
         } else {
-          await tx.budgetAllocation.deleteMany({
-            where: { categoryId },
-          });
+          await tx.budgetAllocation.deleteMany({ where: { categoryId } });
         }
       }
 

@@ -133,23 +133,25 @@ export function GoalProgressChart({
             />
             <Bar
               dataKey={(entry) => {
-                const progress = entry.target && entry.target > 0
-                  ? entry.actual / entry.target
-                  : maxActual > 0
+                const progress =
+                  entry.target && entry.target > 0
+                    ? entry.actual / entry.target
+                    : maxActual > 0
                     ? entry.actual / maxActual
                     : 0;
                 return Math.min(progress, 1.4);
               }}
               radius={[4, 4, 4, 4]}
               name="Progress"
+              isAnimationActive
             >
               {goals.map((entry) => {
                 const hasTarget = entry.target !== null && entry.target > 0;
                 const progress = hasTarget
                   ? entry.actual / (entry.target ?? 1)
                   : maxActual > 0
-                    ? entry.actual / maxActual
-                    : 0;
+                  ? entry.actual / maxActual
+                  : 0;
                 const capped = Math.min(progress, 1.4);
                 const fill = hasTarget
                   ? capped >= 1

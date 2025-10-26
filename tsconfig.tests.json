@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".tmp/tests",
+    "module": "esnext",
+    "target": "ES2020",
+    "moduleResolution": "bundler",
+    "allowJs": false,
+    "types": ["node"],
+    "sourceMap": false,
+    "declaration": false,
+    "emitDeclarationOnly": false
+  },
+  "include": [
+    "lib/__tests__/**/*.ts",
+    "lib/merchantNormalization.ts",
+    "lib/merchantService.ts",
+    "lib/monthStatus.ts",
+    "lib/yelpClient.ts"
+  ],
+  "exclude": ["node_modules", ".next", "dist", ".tmp"]
+}

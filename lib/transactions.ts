@@ -11,6 +11,7 @@ import {
   TransactionType,
 } from "@prisma/client";
 import { prisma } from "@budget/lib/prisma";
+export { canonicalizeMerchantName as sanitizeMerchantName } from "@budget/lib/merchantNormalization";
 
 type DecimalLike = Prisma.Decimal | number | string;
 
@@ -34,199 +35,19 @@ const normalizeAmount = (amount: DecimalLike): string => {
 const normalizeText = (value?: string | null) =>
   value?.trim().toLowerCase() ?? "";
 
-const UNITED_STATES_STATE_CODES = new Set([
-  "AL",
-  "AK",
-  "AZ",
-  "AR",
-  "CA",
-  "CO",
-  "CT",
-  "DE",
-  "FL",
-  "GA",
-  "HI",
-  "ID",
-  "IL",
-  "IN",
-  "IA",
-  "KS",
-  "KY",
-  "LA",
-  "ME",
-  "MD",
-  "MA",
-  "MI",
-  "MN",
-  "MS",
-  "MO",
-  "MT",
-  "NE",
-  "NV",
-  "NH",
-  "NJ",
-  "NM",
-  "NY",
-  "NC",
-  "ND",
-  "OH",
-  "OK",
-  "OR",
-  "PA",
-  "RI",
-  "SC",
-  "SD",
-  "TN",
-  "TX",
-  "UT",
-  "VT",
-  "VA",
-  "WA",
-  "WV",
-  "WI",
-  "WY",
-  "DC",
-]);
-
-const LOCATION_PLACEHOLDER_TOKENS = new Set([
-  "USA",
-  "US",
-  "UNITED",
-  "STATES",
-  "UNITEDSTATES",
-  "CANADA",
-  "CA",
-]);
-
-const MERCHANT_OVERRIDES: Array<{ matcher: RegExp; name: string }> = [
-  { matcher: /^(?:AMAZON|AMZN|AMAZN)/, name: "Amazon" },
-  { matcher: /^MCDONALD/, name: "McDonalds" },
-  { matcher: /^(?:WM|WAL[-\s]?MART|WALMART|WMT)/, name: "WalMart" },
-  { matcher: /^TARGET/, name: "Target" },
-  {
-    matcher: /^(?:GOOGLE\s+)?YOUTUBEPREMIUM\b/,
-    name: "YouTube Premium",
-  },
-  {
-    matcher: /OPENAI\s+CHATGPT\s+SUBSCR?\b/,
-    name: "ChatGPT Subscription",
-  },
-  { matcher: /^FAZOLIS\b/, name: "Fazolis" },
-  { matcher: /^CASEY'?S\b/, name: "Caseys" },
-  { matcher: /HOME\s+DEPOT/, name: "The Home Depot" },
-  { matcher: /^PAPA\s+JOHN'?S\b/, name: "Papa Johns" },
-];
-
-const titleCaseWord = (word: string) => {
-  if (!word) return word;
-  if (/^[A-Z0-9&]+$/.test(word) && word.length <= 3) {
-    return word;
-  }
-  const lower = word.toLowerCase();
-  return lower.replace(/(^[a-z])|([-'][a-z])/g, (segment) =>
-    segment.toUpperCase()
-  );
-};
-
-export const sanitizeMerchantName = (input?: string | null): string => {
-  if (!input) return "";
-
-  const collapsed = input.replace(/\s+/g, " ").trim();
-  if (!collapsed) {
-    return "";
-  }
-
-  const collapsedUpper = collapsed.toUpperCase();
-  for (const override of MERCHANT_OVERRIDES) {
-    if (override.matcher.test(collapsedUpper)) {
-      return override.name;
-    }
-  }
-
-  const tokens = collapsed.split(/\s+/);
-  let end = tokens.length;
-  let removedLocation = false;
-
-  while (end > 0) {
-    const token = tokens[end - 1];
-    const alphanumeric = token.replace(/[^A-Za-z0-9]/g, "");
-    if (!alphanumeric) {
-      end -= 1;
-      removedLocation = true;
-      continue;
-    }
-
-    const upperToken = alphanumeric.toUpperCase();
-    if (
-      UNITED_STATES_STATE_CODES.has(upperToken) ||
-      LOCATION_PLACEHOLDER_TOKENS.has(upperToken) ||
-      /\d/.test(alphanumeric)
-    ) {
-      end -= 1;
-      removedLocation = true;
-      continue;
-    }
-
-    if (
-      removedLocation &&
-      upperToken === token.toUpperCase() &&
-      upperToken.length > 3 &&
-      end > 2
-    ) {
-      end -= 1;
-      continue;
-    }
-
-    break;
-  }
-
-  let candidate = tokens.slice(0, end).join(" ").trim();
-  if (!candidate) {
-    candidate = collapsed;
-  }
-
-  candidate = candidate.replace(/[,\-#]+$/g, "").trim();
-  if (!candidate) {
-    candidate = collapsed;
-  }
-
-  if (
-    candidate === candidate.toUpperCase() &&
-    /[A-Z]/.test(candidate)
-  ) {
-    candidate = candidate
-      .split(/\s+/)
-      .map(titleCaseWord)
-      .join(" ");
-  }
-
-  const candidateUpper = candidate.toUpperCase();
-  for (const override of MERCHANT_OVERRIDES) {
-    if (override.matcher.test(candidateUpper)) {
-      return override.name;
-    }
-  }
-
-  return candidate;
-};
-
 export const computeTransactionFingerprint = (input: {
   occurredOn: Date;
   amount: DecimalLike;
   merchant?: string | null;
   description?: string | null;
-  postedOn?: Date | null;
 }): string => {
   const dateKey = input.occurredOn.toISOString().slice(0, 10);
-  const postedKey = input.postedOn?.toISOString().slice(0, 10) ?? "";
   const amountKey = normalizeAmount(input.amount);
   const merchantKey = normalizeText(input.merchant);
   const descriptionKey = normalizeText(input.description);
 
   const hash = createHash("sha1");
-  hash.update(
-    `${dateKey}|${postedKey}|${amountKey}|${merchantKey}|${descriptionKey}`
-  );
+  hash.update(`${dateKey}S|${amountKey}|${merchantKey}|${descriptionKey}`);
   return hash.digest("hex");
 };
 

@@ -132,6 +132,7 @@ export function IncomeVsOutflowChart({
           name="Income"
           fill="rgba(16, 185, 129, 0.85)"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           <LabelList
             position="top"
@@ -144,6 +145,7 @@ export function IncomeVsOutflowChart({
           name="Outflow"
           fill="rgba(239, 68, 68, 0.85)"
           radius={[6, 6, 0, 0]}
+          isAnimationActive
         >
           <LabelList
             position="top"

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { useCache } from "@budget/app/hooks/useCache";
+import { useCache, useCategoryCache } from "@budget/app/hooks/useCache";
 import { monthKey } from "@budget/app/providers/CacheProvider";
 
 type PrefetchOptions = {
@@ -24,6 +24,7 @@ const currentMonthKey = () => {
 export function useAuthPrefetch(options?: PrefetchOptions) {
   const { status } = useSession();
   const { actions } = useCache();
+  const { refreshCategories } = useCategoryCache();
   const hasPrefetched = useRef(false);
 
   const targetMonths = useMemo(() => {
@@ -47,7 +48,7 @@ export function useAuthPrefetch(options?: PrefetchOptions) {
 
     const prefetch = async () => {
       try {
-        await actions.categories.refresh(abortController.signal);
+        await refreshCategories({ signal: abortController.signal });
         await Promise.all(
           targetMonths.map((month) => actions.budgets.ensure(month))
         );
@@ -63,5 +64,5 @@ export function useAuthPrefetch(options?: PrefetchOptions) {
     return () => {
       abortController.abort();
     };
-  }, [actions, status, targetMonths]);
+  }, [actions, refreshCategories, status, targetMonths]);
 }

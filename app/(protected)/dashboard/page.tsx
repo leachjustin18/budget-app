@@ -1,11 +1,8 @@
 import DashboardCharts from "./DashboardCharts";
-import { getDashboardData } from "./data";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const data = await getDashboardData();
-
+export default function DashboardPage() {
   return (
     <section className="space-y-6">
       <header className="rounded-3xl border border-emerald-900/10 bg-gradient-to-br from-emerald-100/80 via-white/70 to-emerald-50/80 px-6 py-6 shadow-[0_22px_45px_rgba(16,185,129,0.18)] backdrop-blur">
@@ -20,7 +17,7 @@ export default async function DashboardPage() {
         </p>
       </header>
 
-      <DashboardCharts data={data} />
+      <DashboardCharts />
     </section>
   );
 }

@@ -13,3 +13,9 @@ export const toNumber = (value?: string | number | null): number => {
   if (typeof value === "number") return value;
   return Number(value);
 };
+
+const now = new Date();
+const year = now.getFullYear();
+const month = now.getMonth() + 1;
+
+export const monthKey = `${year}-${month}`;

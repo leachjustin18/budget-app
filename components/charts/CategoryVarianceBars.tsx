@@ -106,6 +106,7 @@ export function CategoryVarianceBars({
           name="Planned"
           radius={[0, 0, 0, 0]}
           maxBarSize={18}
+          isAnimationActive
         />
         <Bar
           dataKey="actual"
@@ -113,6 +114,7 @@ export function CategoryVarianceBars({
           name="Actual"
           radius={[4, 4, 4, 4]}
           maxBarSize={18}
+          isAnimationActive
         >
           {categories.map((entry) => {
             const variance =

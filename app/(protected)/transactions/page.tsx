@@ -12,56 +12,45 @@ import { Transition } from "@headlessui/react";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
 import Toast from "@budget/components/Toast";
 import { Button } from "@budget/components/UI/Button";
-import TransactionForm, {
-  type BudgetSnapshot,
-  type CategoryOption,
-  type TransactionFormState,
-  type TransactionFormSubmitPayload,
-} from "./TransactionForm";
+import ManualTransactionFormContainer from "./ManualTransactionFormContainer";
+import { mapCategoryToOption } from "./formHelpers";
+import type {
+  ApiTransaction,
+  BudgetSnapshot,
+  CategoryOption,
+  TransactionFormSubmitPayload,
+  TransactionOrigin,
+} from "./types";
 import { getMonthKey, parseMonthKey } from "@budget/lib/transactions";
 import Modal from "@budget/components/Modal";
 import {
   useCache,
-  useCategories,
   useBudgetByMonth,
+  useCategoryCache,
 } from "@budget/app/hooks/useCache";
-import type {
-  Category,
-  CategorySection,
-} from "@budget/app/providers/CacheProvider";
-
-type TransactionType = "EXPENSE" | "INCOME" | "TRANSFER";
-type TransactionOrigin = "MANUAL" | "IMPORT" | "ADJUSTMENT";
-
-type ApiSplit = {
-  id: string;
-  amount: number;
-  memo: string;
-  category: CategoryOption | null;
-};
-
-type ApiTransaction = {
-  id: string;
-  occurredOn: string;
-  postedOn: string | null;
-  amount: number;
-  type: TransactionType;
-  origin: TransactionOrigin;
-  description: string;
-  merchant: string;
-  memo: string;
-  categoryId: string | null;
-  importBatchId: string | null;
-  isPending: boolean;
-  budgetId: string | null;
-  splits: ApiSplit[];
-};
+import type { CategorySection } from "@budget/app/providers/CacheProvider";
 
 type ImportSummary = {
   imported: number;
   duplicates: number;
   skipped: number;
   errors: Array<{ row: number; message: string }>;
+};
+
+type MerchantResolution = {
+  normalizedKey: string;
+  suggestedName: string;
+  rawNames: string[];
+};
+
+type ImportResponsePayload = {
+  summary: ImportSummary & { pendingMerchants?: number };
+  merchantResolutions?: MerchantResolution[];
+};
+
+type MerchantSuggestion = {
+  id: string;
+  canonicalName: string;
 };
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", {
@@ -81,59 +70,6 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const formatCurrency = (value: number) => currencyFormatter.format(value);
-
-const mapCategoryToOption = (category: Category): CategoryOption => ({
-  id: category.id,
-  name: category.name,
-  emoji: category.emoji,
-  section: category.section,
-  carryForwardDefault: category.carryForwardDefault,
-  repeatCadenceDefault: category.repeatCadenceDefault,
-  usage: category.usage,
-});
-
-const mapTransactionToFormState = (
-  transaction: ApiTransaction,
-  fallbackCategoryId: string,
-  categories: CategoryOption[]
-): Partial<TransactionFormState> => {
-  const categoryLookup = new Map(
-    categories.map((category) => [category.id, category])
-  );
-
-  const resolvedSplits = transaction.splits.length
-    ? transaction.splits
-    : [
-        {
-          id:
-            typeof crypto !== "undefined" && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `split-${Math.random().toString(36).slice(2, 10)}`,
-          amount: transaction.amount,
-          memo: "",
-          category: transaction.categoryId
-            ? categoryLookup.get(transaction.categoryId) ?? null
-            : null,
-        },
-      ];
-
-  return {
-    occurredOn: transaction.occurredOn,
-    postedOn: transaction.postedOn,
-    merchant: transaction.merchant,
-    description: transaction.description,
-    memo: transaction.memo,
-    amount: transaction.amount.toFixed(2),
-    type: transaction.type,
-    splits: resolvedSplits.map((split) => ({
-      id: split.id,
-      categoryId:
-        split.category?.id ?? transaction.categoryId ?? fallbackCategoryId,
-      amount: split.amount.toFixed(2),
-      memo: split.memo ?? "",
-    })),
-  } satisfies Partial<TransactionFormState>;
-};
 
 const formatTransactionOrigin = (origin: TransactionOrigin) => {
   switch (origin) {
@@ -191,12 +127,39 @@ export default function TransactionsPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [isWrongExtension, setIsWrongExtension] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [merchantResolutionQueue, setMerchantResolutionQueue] = useState<
+    MerchantResolution[]
+  >([]);
+  const [isResolutionModalOpen, setIsResolutionModalOpen] = useState(false);
+  const [isResolvingMerchant, setIsResolvingMerchant] = useState(false);
 
-  const categoryRecords = useCategories();
+  const {
+    categoriesList: categoryRecords,
+    refreshCategories,
+    hasHydrated: categoriesHydrated,
+    isRefreshing: categoriesRefreshing,
+  } = useCategoryCache();
+  const hasRequestedCategoryRefresh = useRef(false);
   const categories = useMemo(
     () => categoryRecords.map(mapCategoryToOption),
     [categoryRecords]
   );
+
+  useEffect(() => {
+    if (categoriesHydrated || categoriesRefreshing) return;
+    if (hasRequestedCategoryRefresh.current) return;
+    hasRequestedCategoryRefresh.current = true;
+    void refreshCategories().catch((error) => {
+      console.warn("Failed to refresh categories", error);
+      hasRequestedCategoryRefresh.current = false;
+    });
+  }, [categoriesHydrated, categoriesRefreshing, refreshCategories]);
+
+  useEffect(() => {
+    if (merchantResolutionQueue.length === 0) {
+      setIsResolutionModalOpen(false);
+    }
+  }, [merchantResolutionQueue]);
 
   const ensuredBudgetMonths = useRef<Set<string>>(new Set());
   const ensureBudget = actions.budgets.ensure;
@@ -227,19 +190,6 @@ export default function TransactionsPage() {
     return snapshot;
   }, [budgetSnapshot]);
 
-  const handleImportModalClosing = () => {
-    setIsWrongExtension(false);
-    setIsImportModalOpen(false);
-  };
-
-  const defaultCategoryId = useMemo(() => {
-    if (!categories.length) return "";
-    const uncategorized = categories.find(
-      (category) => category.name.toLowerCase() === "uncategorized"
-    );
-    return (uncategorized ?? categories[0]).id;
-  }, [categories]);
-
   const pushToast = useCallback(
     (toast: Omit<ToastProps, "id"> & { id?: string }) => {
       const id =
@@ -251,10 +201,6 @@ export default function TransactionsPage() {
     },
     []
   );
-
-  const dismissToast = useCallback((id?: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
 
   const fetchTransactions = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -279,7 +225,25 @@ export default function TransactionsPage() {
         }
 
         const payload = await response.json();
-        setTransactions(payload.transactions ?? []);
+        const next = payload.transactions ?? [];
+        setTransactions((prev) => {
+          if (next.length === 0) {
+            return prev;
+          }
+
+          const nextIds = new Set(
+            next.map((transaction: { id: string }) => transaction.id)
+          );
+          const combined = [...next];
+
+          for (const transaction of prev) {
+            if (!nextIds.has(transaction.id)) {
+              combined.push(transaction);
+            }
+          }
+
+          return combined;
+        });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unexpected error";
@@ -298,6 +262,82 @@ export default function TransactionsPage() {
     },
     [debouncedSearch, month, pushToast]
   );
+
+  const handleImportModalClosing = () => {
+    setIsWrongExtension(false);
+    setIsImportModalOpen(false);
+  };
+
+  const fetchMerchantSuggestions = useCallback(
+    async (query: string): Promise<MerchantSuggestion[]> => {
+      const trimmed = query.trim();
+      if (!trimmed) return [];
+      try {
+        const response = await fetch(
+          `/api/merchants?q=${encodeURIComponent(trimmed)}`,
+          { cache: "no-store" }
+        );
+        if (!response.ok) {
+          return [];
+        }
+        const payload = await response.json().catch(() => ({ merchants: [] }));
+        return payload.merchants ?? [];
+      } catch (error) {
+        console.warn("Failed to load merchant suggestions", error);
+        return [];
+      }
+    },
+    []
+  );
+
+  const resolveMerchant = useCallback(
+    async (normalizedKey: string, canonicalName: string, rawName: string) => {
+      setIsResolvingMerchant(true);
+      try {
+        const response = await fetch("/api/merchants/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            normalizedKey,
+            canonicalName,
+            rawName,
+          }),
+        });
+
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error ?? "Unable to resolve merchant");
+        }
+
+        setMerchantResolutionQueue((prev) =>
+          prev.filter((item) => item.normalizedKey !== normalizedKey)
+        );
+
+        pushToast({
+          title: "Merchant saved",
+          description: `${canonicalName} will be used next time`,
+          variant: "success",
+        });
+
+        await fetchTransactions({ silent: true });
+      } catch (error) {
+        pushToast({
+          title: "Couldn't save merchant",
+          description:
+            error instanceof Error ? error.message : "Unexpected error",
+          variant: "danger",
+        });
+        throw error;
+      } finally {
+        setIsResolvingMerchant(false);
+      }
+    },
+    [fetchTransactions, pushToast]
+  );
+
+  const dismissToast = useCallback((id?: string) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -442,8 +482,8 @@ export default function TransactionsPage() {
 
         setIsImportModalOpen(false);
 
-        const payload: { summary: ImportSummary } = await response.json();
-        const { summary } = payload;
+        const payload: ImportResponsePayload = await response.json();
+        const { summary, merchantResolutions } = payload;
 
         pushToast({
           title: `Imported ${summary.imported} transactions`,
@@ -451,6 +491,10 @@ export default function TransactionsPage() {
             ? `${summary.duplicates} duplicates ignored`
             : summary.skipped
             ? `${summary.skipped} rows skipped`
+            : summary.pendingMerchants
+            ? `${summary.pendingMerchants} merchant${
+                summary.pendingMerchants === 1 ? "" : "s"
+              } need review`
             : undefined,
           variant: "success",
         });
@@ -464,6 +508,13 @@ export default function TransactionsPage() {
               .join(" • "),
             variant: "warning",
           });
+        }
+
+        if (merchantResolutions?.length) {
+          setMerchantResolutionQueue(merchantResolutions);
+          setIsResolutionModalOpen(true);
+        } else {
+          setMerchantResolutionQueue([]);
         }
 
         await fetchTransactions({ silent: true });
@@ -583,7 +634,7 @@ export default function TransactionsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             occurredOn: payload.occurredOn,
-            postedOn: payload.postedOn,
+
             amount: payload.amount,
             type: payload.type,
             merchant: payload.merchant,
@@ -593,10 +644,29 @@ export default function TransactionsPage() {
           }),
         });
 
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(body.error ?? "Unable to update transaction");
+        const body = await response.json().catch(() => null);
+
+        if (!response.ok || !body?.transaction) {
+          throw new Error(body?.error ?? "Unable to update transaction");
         }
+
+        const updatedTransaction = body.transaction as ApiTransaction;
+
+        setTransactions((previous) => {
+          const exists = previous.some(
+            (transaction) => transaction.id === updatedTransaction.id
+          );
+
+          if (!exists) {
+            return [updatedTransaction, ...previous];
+          }
+
+          return previous.map((transaction) =>
+            transaction.id === updatedTransaction.id
+              ? updatedTransaction
+              : transaction
+          );
+        });
 
         pushToast({
           title: "Transaction updated",
@@ -604,7 +674,6 @@ export default function TransactionsPage() {
         });
 
         setEditingTransaction(null);
-        await fetchTransactions({ silent: true });
       } catch (error) {
         pushToast({
           title: "Update failed",
@@ -616,7 +685,7 @@ export default function TransactionsPage() {
         setEditInFlight(false);
       }
     },
-    [fetchTransactions, pushToast]
+    [pushToast]
   );
 
   const currentMonthLabel = useMemo(() => {
@@ -767,7 +836,7 @@ export default function TransactionsPage() {
                   <div className="flex flex-wrap items-center gap-4">
                     <div className="flex flex-col text-sm">
                       <span className="font-semibold text-emerald-950">
-                        {transaction.merchant || "No merchant"}
+                        {transaction.merchantName || "No merchant"}
                       </span>
                       <span className="text-xs text-emerald-900/60">
                         {transaction.description || "No description"}
@@ -829,7 +898,7 @@ export default function TransactionsPage() {
                           setDeleteState({
                             isOpen: true,
                             amount: transaction.amount,
-                            merchant: transaction.merchant,
+                            merchant: transaction.merchantName,
                             occurredOn: transaction.occurredOn,
                             transactionId: transaction.id,
                           })
@@ -862,7 +931,7 @@ export default function TransactionsPage() {
         showCancel
         title="Delete Transaction"
         onSave={() => {
-          handleDeletManualTransaction(deleteState.transactionId);
+          void handleDeletManualTransaction(deleteState.transactionId);
         }}
         saveVariant="destructive"
         isSaving={deleteState.isDeleting}
@@ -919,14 +988,12 @@ export default function TransactionsPage() {
         }}
         title="Add a Manual Transaction"
       >
-        <TransactionForm
-          key={createFormKey}
-          categories={categories}
+        <ManualTransactionFormContainer
+          formKey={createFormKey}
           budgetByCategory={budgetByCategory}
-          defaultCategoryId={defaultCategoryId}
-          onSubmit={handleManualSubmit}
-          submitLabel="Save transaction"
           submitting={createInFlight}
+          submitLabel="Save transaction"
+          onSubmit={handleManualSubmit}
           showCancel
           onCancel={() => {
             setIsCreateModalOpen(false);
@@ -1045,33 +1112,36 @@ export default function TransactionsPage() {
         </div>
       </Modal>
 
+      <MerchantResolutionModal
+        isOpen={isResolutionModalOpen && merchantResolutionQueue.length > 0}
+        isResolving={isResolvingMerchant}
+        merchant={merchantResolutionQueue[0]}
+        onResolve={resolveMerchant}
+        onCancel={() => {
+          setMerchantResolutionQueue([]);
+        }}
+        fetchSuggestions={fetchMerchantSuggestions}
+      />
+
       <Modal
         isOpen={Boolean(editingTransaction)}
         onClose={() => setEditingTransaction(null)}
-        title="Edit a Manual Transaction"
+        title="Edit a Transaction"
       >
         {editingTransaction ? (
-          <TransactionForm
-            categories={categories}
+          <ManualTransactionFormContainer
+            transaction={editingTransaction}
             budgetByCategory={budgetByCategory}
-            defaultCategoryId={defaultCategoryId}
+            submitting={editInFlight}
+            submitLabel="Update transaction"
             onSubmit={(payload) =>
               handleEditSubmit(editingTransaction.id, payload)
             }
-            submitLabel="Update transaction"
-            submitting={editInFlight}
-            initialState={mapTransactionToFormState(
-              editingTransaction,
-              defaultCategoryId,
-              categories
-            )}
             showCancel
             onCancel={() => setEditingTransaction(null)}
             onCreateCategory={requestCategoryCreation}
           />
-        ) : (
-          ""
-        )}
+        ) : null}
       </Modal>
 
       {toasts.map((toast) => (
@@ -1086,5 +1156,147 @@ export default function TransactionsPage() {
         </Fragment>
       ))}
     </div>
+  );
+}
+type MerchantResolutionModalProps = {
+  isOpen: boolean;
+  isResolving: boolean;
+  merchant?: MerchantResolution;
+  onResolve: (
+    normalizedKey: string,
+    canonicalName: string,
+    rawName: string
+  ) => Promise<void>;
+  onCancel: () => void;
+  fetchSuggestions: (query: string) => Promise<MerchantSuggestion[]>;
+};
+
+function MerchantResolutionModal({
+  isOpen,
+  isResolving,
+  merchant,
+  onResolve,
+  onCancel,
+  fetchSuggestions,
+}: MerchantResolutionModalProps) {
+  const [inputValue, setInputValue] = useState("");
+  const [suggestions, setSuggestions] = useState<MerchantSuggestion[]>([]);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && merchant) {
+      setInputValue(merchant.suggestedName || "");
+      setLocalError(null);
+      setSuggestions([]);
+    }
+  }, [isOpen, merchant]);
+
+  useEffect(() => {
+    if (!isOpen || !merchant) {
+      return;
+    }
+    const trimmed = inputValue.trim();
+    if (!trimmed) {
+      setSuggestions([]);
+      return;
+    }
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void fetchSuggestions(trimmed)
+        .then((results) => {
+          if (active) {
+            setSuggestions(results);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setSuggestions([]);
+          }
+        });
+    }, 250);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [fetchSuggestions, inputValue, isOpen, merchant]);
+
+  if (!merchant) {
+    return null;
+  }
+
+  const handleSave = async () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) {
+      setLocalError("Please provide a merchant name");
+      return;
+    }
+
+    try {
+      await onResolve(
+        merchant.normalizedKey,
+        trimmed,
+        merchant.rawNames[0] ?? trimmed
+      );
+    } catch (error) {
+      setLocalError(
+        error instanceof Error ? error.message : "Unable to save merchant"
+      );
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onCancel}
+      title="Resolve Merchant"
+      showCancel
+      onSave={handleSave}
+      isSaving={isResolving}
+      saveText="Save merchant"
+      loadingText="Saving merchant..."
+    >
+      <div className="space-y-4 text-sm text-emerald-900/80">
+        <div>
+          <p className="text-xs font-semibold uppercase text-emerald-900/60">
+            Original values
+          </p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {merchant.rawNames.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-semibold uppercase text-emerald-900/70">
+            Merchant name
+          </label>
+          <input
+            value={inputValue}
+            onChange={(event) => {
+              setInputValue(event.target.value);
+              setLocalError(null);
+            }}
+            list="merchant-suggestion-options"
+            className="w-full rounded-2xl border border-emerald-200 bg-white px-3 py-2 text-sm font-medium text-emerald-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            placeholder="Start typing to search or create"
+            disabled={isResolving}
+          />
+          <datalist id="merchant-suggestion-options">
+            {suggestions.map((suggestion) => (
+              <option key={suggestion.id} value={suggestion.canonicalName} />
+            ))}
+          </datalist>
+          {localError ? (
+            <p className="text-xs text-red-600">{localError}</p>
+          ) : null}
+          <p className="text-xs text-emerald-900/60">
+            Pick an existing merchant or enter a new name to remember it next
+            time.
+          </p>
+        </div>
+      </div>
+    </Modal>
   );
 }

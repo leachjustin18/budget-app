@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { parse } from "csv-parse/sync";
-import {
-  Prisma,
-  TransactionOrigin,
-  TransactionType,
-} from "@prisma/client";
+import { Prisma, TransactionOrigin, TransactionType } from "@prisma/client";
 import { prisma } from "@budget/lib/prisma";
 import {
   computeTransactionFingerprint,
@@ -15,6 +11,16 @@ import {
   syncBudgetSpentForMonth,
   sanitizeMerchantName,
 } from "@budget/lib/transactions";
+import {
+  merchantAliasComponents,
+  normalizeMerchantKey,
+} from "@budget/lib/merchantNormalization";
+import {
+  fetchYelpAutocomplete,
+  type YelpAutocompleteResult,
+  type YelpBusinessSuggestion,
+} from "@budget/lib/yelpClient";
+import { resolveMerchant } from "@budget/lib/merchantService";
 
 export const runtime = "nodejs";
 
@@ -71,6 +77,97 @@ const parseAmount = (value?: string | null): number | null => {
   return hasParens ? -Math.abs(parsed) : parsed;
 };
 
+type MerchantCacheEntry = {
+  canonicalName: string;
+  merchantId: string | null;
+  yelpId: string | null;
+};
+
+const tokenize = (value: string): Set<string> => {
+  const sanitized = sanitizeMerchantName(value);
+  return new Set(
+    sanitized
+      .toLowerCase()
+      .split(/\s+/)
+      .map((token) => token.replace(/[^a-z0-9]/g, ""))
+      .filter((token) => token.length > 1)
+  );
+};
+
+const tokenSimilarity = (a: Set<string>, b: Set<string>): number => {
+  if (!a.size || !b.size) return 0;
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) {
+      intersection += 1;
+    }
+  }
+  const union = new Set([...a, ...b]);
+  return intersection / union.size;
+};
+
+const pickYelpCandidate = (
+  normalizedKey: string,
+  info: { canonicalCandidate: string; rawNames: Set<string> },
+  response: YelpAutocompleteResult | null
+): {
+  canonicalName: string;
+  normalizedKey: string;
+  rawName: string;
+  yelpId?: string;
+} | null => {
+  if (!response?.businesses?.length) {
+    return null;
+  }
+
+  const targetTokens = tokenize(info.canonicalCandidate || normalizedKey);
+  const rawName =
+    info.rawNames.values().next().value ??
+    info.canonicalCandidate ??
+    normalizedKey;
+
+  let best: {
+    suggestion: YelpBusinessSuggestion;
+    canonicalName: string;
+    normalizedCandidateKey: string;
+    similarity: number;
+    directMatch: boolean;
+  } | null = null;
+
+  for (const business of response.businesses) {
+    if (!business?.name) continue;
+    const canonicalName = sanitizeMerchantName(business.name);
+    if (!canonicalName) continue;
+    const normalizedCandidateKey = normalizeMerchantKey(business.name);
+    const candidateTokens = tokenize(canonicalName);
+    const similarity = tokenSimilarity(targetTokens, candidateTokens);
+    const directMatch = normalizedCandidateKey === normalizedKey;
+
+    if (!best || directMatch || similarity > best.similarity) {
+      best = {
+        suggestion: business,
+        canonicalName,
+        normalizedCandidateKey,
+        similarity,
+        directMatch,
+      };
+    }
+  }
+
+  if (!best) return null;
+
+  if (best.directMatch || best.similarity >= 0.5) {
+    return {
+      canonicalName: best.canonicalName,
+      normalizedKey,
+      rawName,
+      yelpId: best.suggestion.id,
+    };
+  }
+
+  return null;
+};
+
 const extractFromRecord = (record: CsvRecord) => {
   const normalized = new Map<string, string>();
   Object.entries(record).forEach(([key, value]) => {
@@ -86,11 +183,6 @@ const extractFromRecord = (record: CsvRecord) => {
   if (!occurredOn) {
     return null;
   }
-
-  const postedOn =
-    parseDate(normalized.get("posteddate")) ??
-    parseDate(normalized.get("clearingdate")) ??
-    null;
 
   let amount: number | null = null;
   if (normalized.has("amount")) {
@@ -133,18 +225,23 @@ const extractFromRecord = (record: CsvRecord) => {
 
   const rawMerchant = merchant ?? "";
   const sanitizedMerchant = sanitizeMerchantName(rawMerchant);
+  const aliasComponents = merchantAliasComponents(rawMerchant);
+  const canonicalMerchant = aliasComponents.canonicalName || sanitizedMerchant;
+  const normalizedMerchant = aliasComponents.normalizedKey;
 
   const type = amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
   const absoluteAmount = Math.abs(amount);
 
   return {
     occurredOn,
-    postedOn,
+
     amount: absoluteAmount,
     type,
     description: description ?? "",
     merchant: rawMerchant,
     sanitizedMerchant,
+    canonicalMerchant,
+    normalizedMerchant,
     raw: JSON.stringify(record),
   };
 };
@@ -155,10 +252,7 @@ export async function POST(request: Request) {
   const sourceParam = formData.get("source");
 
   if (!(file instanceof File)) {
-    return NextResponse.json(
-      { error: "file is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "file is required" }, { status: 400 });
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -178,10 +272,7 @@ export async function POST(request: Request) {
   }
 
   if (!records.length) {
-    return NextResponse.json(
-      { error: "CSV file is empty" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "CSV file is empty" }, { status: 400 });
   }
 
   const importBatch = await prisma.importBatch.create({
@@ -199,11 +290,29 @@ export async function POST(request: Request) {
   const defaultCategory = await ensureDefaultCategory(prisma);
 
   const createdTransactionIds: string[] = [];
+  const createdTransactionMeta = new Map<
+    string,
+    {
+      rawMerchant: string;
+      normalizedMerchant: string;
+      canonicalMerchant: string;
+      merchantId?: string | null;
+      needsReview: boolean;
+    }
+  >();
   const affectedMonths = new Set<string>();
   let imported = 0;
   let duplicates = 0;
   let skipped = 0;
   const errors: Array<{ row: number; message: string }> = [];
+
+  type ParsedItem = ReturnType<typeof extractFromRecord> & { index: number };
+
+  const parsedItems: ParsedItem[] = [];
+  const normalizedMerchants = new Map<
+    string,
+    { rawNames: Set<string>; canonicalCandidate: string }
+  >();
 
   for (const [index, record] of records.entries()) {
     const parsed = extractFromRecord(record);
@@ -212,11 +321,98 @@ export async function POST(request: Request) {
       continue;
     }
 
+    parsedItems.push({ ...parsed, index });
+
+    if (parsed.normalizedMerchant) {
+      const existing = normalizedMerchants.get(parsed.normalizedMerchant);
+      if (existing) {
+        existing.rawNames.add(parsed.merchant);
+      } else {
+        normalizedMerchants.set(parsed.normalizedMerchant, {
+          rawNames: new Set([parsed.merchant]),
+          canonicalCandidate:
+            parsed.canonicalMerchant || parsed.sanitizedMerchant,
+        });
+      }
+    }
+  }
+
+  const merchantCache = new Map<string, MerchantCacheEntry>();
+  const normalizedKeys = Array.from(normalizedMerchants.keys()).filter(Boolean);
+
+  if (normalizedKeys.length) {
+    const aliases = await prisma.merchantAlias.findMany({
+      where: { normalized: { in: normalizedKeys } },
+      include: { merchant: true },
+    });
+
+    for (const alias of aliases) {
+      merchantCache.set(alias.normalized, {
+        canonicalName: alias.merchant.canonicalName,
+        merchantId: alias.merchantId,
+        yelpId: alias.yelpId ?? alias.merchant.yelpId ?? null,
+      });
+      normalizedMerchants.delete(alias.normalized);
+    }
+  }
+
+  const unresolvedMerchants: Array<{
+    normalizedKey: string;
+    suggestedName: string;
+    rawNames: string[];
+  }> = [];
+
+  for (const [normalizedKey, entry] of normalizedMerchants.entries()) {
+    if (!normalizedKey) {
+      unresolvedMerchants.push({
+        normalizedKey,
+        suggestedName: entry.canonicalCandidate,
+        rawNames: Array.from(entry.rawNames),
+      });
+      continue;
+    }
+
+    const yelpResult = await fetchYelpAutocomplete(
+      entry.canonicalCandidate || normalizedKey
+    );
+
+    const candidate = pickYelpCandidate(normalizedKey, entry, yelpResult);
+
+    if (candidate) {
+      const merchantResult = await resolveMerchant(candidate.rawName, {
+        canonicalName: candidate.canonicalName,
+        yelpId: candidate.yelpId ?? null,
+      });
+
+      if (merchantResult) {
+        const entryValue: MerchantCacheEntry = {
+          canonicalName: merchantResult.canonicalName,
+          merchantId: merchantResult.merchantId,
+          yelpId: candidate.yelpId ?? null,
+        };
+        merchantCache.set(merchantResult.normalizedKey, entryValue);
+        if (merchantResult.normalizedKey !== normalizedKey) {
+          merchantCache.set(normalizedKey, entryValue);
+        }
+        continue;
+      }
+    }
+
+    unresolvedMerchants.push({
+      normalizedKey,
+      suggestedName: entry.canonicalCandidate,
+      rawNames: Array.from(entry.rawNames),
+    });
+  }
+
+  for (const parsed of parsedItems) {
+    const fingerprintMerchant = sanitizeMerchantName(parsed.merchant);
+
     const fingerprint = computeTransactionFingerprint({
       occurredOn: parsed.occurredOn,
-      postedOn: parsed.postedOn ?? undefined,
+
       amount: parsed.amount,
-      merchant: parsed.merchant,
+      merchant: fingerprintMerchant || parsed.merchant,
       description: parsed.description,
     });
 
@@ -238,24 +434,38 @@ export async function POST(request: Request) {
 
     const categoryId = categoryFromRule ?? defaultCategory.id;
 
+    const normalizedKey = parsed.normalizedMerchant;
+    const resolvedMerchant = normalizedKey
+      ? merchantCache.get(normalizedKey)
+      : undefined;
+
+    const canonicalMerchant =
+      resolvedMerchant?.canonicalName ||
+      parsed.canonicalMerchant ||
+      parsed.sanitizedMerchant;
+
     try {
       const createdId = await prisma.$transaction(async (tx) => {
+        const merchantResolution =
+          resolvedMerchant && resolvedMerchant.merchantId
+            ? resolvedMerchant
+            : null;
+
         const created = await tx.transaction.create({
           data: {
             id: randomUUID(),
             importBatchId: importBatch.id,
             occurredOn: parsed.occurredOn,
-            postedOn: parsed.postedOn,
+
             amount: new Prisma.Decimal(parsed.amount.toFixed(2)),
             type: parsed.type,
             origin: TransactionOrigin.IMPORT,
             description: parsed.description ? parsed.description.trim() : null,
-            merchant: parsed.sanitizedMerchant
-              ? parsed.sanitizedMerchant
-              : null,
+            merchant: canonicalMerchant ? canonicalMerchant : null,
+            merchantId: merchantResolution?.merchantId ?? null,
             memo: null,
             isPending: false,
-            externalId: `import:${importBatch.id}:${index}`,
+            externalId: `import:${importBatch.id}:${parsed.index}`,
             fingerprint,
             categoryId,
           },
@@ -277,13 +487,23 @@ export async function POST(request: Request) {
 
       imported += 1;
       createdTransactionIds.push(createdId);
+      createdTransactionMeta.set(createdId, {
+        rawMerchant: parsed.merchant,
+        normalizedMerchant: normalizedKey ?? "",
+        canonicalMerchant: canonicalMerchant ?? "",
+        merchantId: resolvedMerchant?.merchantId ?? null,
+        needsReview: Boolean(normalizedKey) && !resolvedMerchant,
+      });
       affectedMonths.add(
         `${parsed.occurredOn.getFullYear()}-${String(
           parsed.occurredOn.getMonth() + 1
         ).padStart(2, "0")}`
       );
     } catch (error) {
-      errors.push({ row: index + 1, message: error instanceof Error ? error.message : String(error) });
+      errors.push({
+        row: parsed.index + 1,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -308,11 +528,9 @@ export async function POST(request: Request) {
             include: { category: true },
           },
           importBatch: true,
+          merchantRef: true,
         },
-        orderBy: [
-          { occurredOn: "desc" },
-          { createdAt: "desc" },
-        ],
+        orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
       })
     : [];
 
@@ -323,34 +541,57 @@ export async function POST(request: Request) {
       duplicates,
       skipped,
       errors,
+      pendingMerchants: unresolvedMerchants.length,
     },
-    transactions: transactions.map((transaction) => ({
-      id: transaction.id,
-      occurredOn: transaction.occurredOn.toISOString().slice(0, 10),
-      postedOn: transaction.postedOn
-        ? transaction.postedOn.toISOString().slice(0, 10)
-        : null,
-      amount: Number(transaction.amount.toFixed(2)),
-      type: transaction.type,
-      origin: transaction.origin,
-      description: transaction.description ?? "",
-      merchant: transaction.merchant ?? "",
-      memo: transaction.memo ?? "",
-      categoryId: transaction.categoryId,
-      importBatchId: transaction.importBatchId,
-      splits: transaction.splits.map((split) => ({
-        id: split.id,
-        amount: Number(split.amount.toFixed(2)),
-        memo: split.memo ?? "",
-        category: split.category
+    merchantResolutions: unresolvedMerchants.map((entry) => ({
+      normalizedKey: entry.normalizedKey,
+      suggestedName: entry.suggestedName,
+      rawNames: entry.rawNames,
+    })),
+    transactions: transactions.map((transaction) => {
+      const meta = createdTransactionMeta.get(transaction.id);
+      const canonical =
+        transaction.merchantRef?.canonicalName ??
+        meta?.canonicalMerchant ??
+        transaction.merchant ??
+        "";
+      return {
+        id: transaction.id,
+        occurredOn: transaction.occurredOn.toISOString().slice(0, 10),
+
+        amount: Number(transaction.amount.toFixed(2)),
+        type: transaction.type,
+        origin: transaction.origin,
+        description: transaction.description ?? "",
+        merchantName: canonical,
+        merchantId: transaction.merchantRef?.id ?? meta?.merchantId ?? null,
+        merchant: transaction.merchantRef
           ? {
-              id: split.category.id,
-              name: split.category.name,
-              emoji: split.category.emoji ?? "✨",
-              section: split.category.section,
+              id: transaction.merchantRef.id,
+              canonicalName: transaction.merchantRef.canonicalName,
+              yelpId: transaction.merchantRef.yelpId,
             }
           : null,
-      })),
-    })),
+        merchantRaw: meta?.rawMerchant ?? "",
+        merchantNormalizedKey: meta?.normalizedMerchant ?? "",
+        merchantNeedsReview: meta?.needsReview ?? false,
+        memo: transaction.memo ?? "",
+        categoryId: transaction.categoryId,
+        importBatchId: transaction.importBatchId,
+        splits: transaction.splits.map((split) => ({
+          id: split.id,
+          amount: Number(split.amount.toFixed(2)),
+          memo: split.memo ?? "",
+          category: split.category
+            ? {
+                id: split.category.id,
+                name: split.category.name,
+                emoji: split.category.emoji ?? "✨",
+                section: split.category.section,
+              }
+            : null,
+        })),
+      };
+    }),
   });
 }

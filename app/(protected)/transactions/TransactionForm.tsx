@@ -4,64 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@budget/components/UI/Button";
 import CurrencyInput from "@budget/components/CurrencyInput";
 import { joinClassNames } from "@budget/lib/helpers";
-
-type TransactionType = "EXPENSE" | "INCOME" | "TRANSFER";
-
-export type CategoryOption = {
-  id: string;
-  name: string;
-  emoji: string;
-  section: string;
-  carryForwardDefault?: boolean;
-  repeatCadenceDefault?: "MONTHLY" | "ONCE";
-  usage?: {
-    budgets: number;
-    transactions: number;
-    transactionSplits: number;
-    rules: number;
-  };
-};
-
-export type BudgetSnapshot = Record<
-  string,
-  {
-    planned: number;
-    spent: number;
-  }
->;
-
-type SplitState = {
-  id: string;
-  categoryId: string;
-  amount: string;
-  memo: string;
-};
-
-export type TransactionFormState = {
-  occurredOn: string;
-  postedOn: string | null;
-  merchant: string;
-  description: string;
-  memo: string;
-  amount: string;
-  type: TransactionType;
-  splits: SplitState[];
-};
-
-export type TransactionFormSubmitPayload = {
-  occurredOn: string;
-  postedOn?: string | null;
-  merchant: string;
-  description: string;
-  memo?: string;
-  amount: number;
-  type: TransactionType;
-  splits: Array<{
-    categoryId: string;
-    amount: number;
-    memo?: string;
-  }>;
-};
+import type {
+  BudgetSnapshot,
+  CategoryOption,
+  SplitState,
+  TransactionFormState,
+  TransactionFormSubmitPayload,
+  TransactionType,
+} from "./types";
+export type {
+  BudgetSnapshot,
+  CategoryOption,
+  TransactionFormState,
+  TransactionFormSubmitPayload,
+} from "./types";
 
 type TransactionFormProps = {
   categories: CategoryOption[];
@@ -123,7 +79,7 @@ export default function TransactionForm({
   const [state, setState] = useState<TransactionFormState>(() => {
     const base: TransactionFormState = {
       occurredOn: initialState?.occurredOn ?? today,
-      postedOn: initialState?.postedOn ?? null,
+
       merchant: initialState?.merchant ?? "",
       description: initialState?.description ?? "",
       memo: initialState?.memo ?? "",
@@ -152,6 +108,34 @@ export default function TransactionForm({
     () => groupCategories(categories),
     [categories]
   );
+
+  useEffect(() => {
+    if (!categories.length) return;
+    const fallbackId = defaultCategoryId || categories[0]?.id || "";
+    const validIds = new Set(categories.map((category) => category.id));
+    setState((previous) => {
+      let hasChanges = false;
+      const nextSplits = previous.splits.map((split) => {
+        if (validIds.has(split.categoryId)) {
+          return split;
+        }
+        hasChanges = true;
+        return {
+          ...split,
+          categoryId: fallbackId,
+        };
+      });
+
+      if (!hasChanges) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        splits: nextSplits,
+      };
+    });
+  }, [categories, defaultCategoryId]);
 
   const totalAmount = useMemo(() => {
     const parsed = Number.parseFloat(state.amount ?? "0");
@@ -295,7 +279,7 @@ export default function TransactionForm({
 
     await onSubmit({
       occurredOn: state.occurredOn,
-      postedOn: state.postedOn,
+
       merchant: state.merchant.trim(),
       description: state.description.trim(),
       memo: state.memo.trim() || undefined,
@@ -413,23 +397,6 @@ export default function TransactionForm({
               setState((prev) => ({
                 ...prev,
                 occurredOn: event.target.value,
-              }))
-            }
-            className="w-full rounded-2xl border border-emerald-200/60 bg-white px-4 py-2 text-sm font-medium shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-emerald-950">
-            Posted On
-          </label>
-          <input
-            type="date"
-            value={state.postedOn ?? ""}
-            onChange={(event) =>
-              setState((prev) => ({
-                ...prev,
-                postedOn: event.target.value || null,
               }))
             }
             className="w-full rounded-2xl border border-emerald-200/60 bg-white px-4 py-2 text-sm font-medium shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"

@@ -22,10 +22,7 @@ import {
   formatPercent,
 } from "@budget/components/charts/formatters";
 import { round } from "@budget/lib/helpers";
-
-type DashboardChartsProps = {
-  data: DashboardData;
-};
+import { useDashboardData } from "@budget/app/hooks/useDashboardData";
 
 type SummaryTileProps = {
   label: string;
@@ -125,7 +122,8 @@ const limitVendors = (
   ];
 };
 
-export default function DashboardCharts({ data }: DashboardChartsProps) {
+export default function DashboardCharts() {
+  const data = useDashboardData();
   const {
     months,
     monthlySeries,

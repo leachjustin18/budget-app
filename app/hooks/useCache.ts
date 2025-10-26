@@ -9,16 +9,9 @@ import {
   type BudgetSnapshot,
   type CacheActions,
   type Category,
+  type CategoryCacheValue,
   type IncomePlan,
-  type CategorySection,
 } from "@budget/app/providers/CacheProvider";
-
-const categorySectionPriority: Record<CategorySection, number> = {
-  EXPENSES: 0,
-  RECURRING: 1,
-  SAVINGS: 2,
-  DEBT: 3,
-};
 
 const sectionKeyList: BudgetSectionKey[] = [
   "expenses",
@@ -38,6 +31,7 @@ type CacheHookValue = {
   actions: CacheActions;
   version: number;
   selectors: CacheSelectors;
+  categories: CategoryCacheValue;
 };
 
 const cloneCategory = (category: Category): Category => ({ ...category });
@@ -56,7 +50,7 @@ export const useCache = (): CacheHookValue => {
     throw new Error("useCache must be used within a CacheProvider");
   }
 
-  const { actions, version, stateRef } = context;
+  const { actions, version, stateRef, categories } = context;
 
   const selectors = useMemo<CacheSelectors>(() => {
     const getCategoryById = (id: string) => {
@@ -97,36 +91,12 @@ export const useCache = (): CacheHookValue => {
     };
   }, [stateRef]);
 
-  return { actions, version, selectors };
+  return { actions, version, selectors, categories };
 };
 
 export const useCategories = (): Category[] => {
-  const context = useContext(CacheContext);
-  if (!context) {
-    throw new Error("useCategories must be used within a CacheProvider");
-  }
-
-  const { stateRef, version } = context;
-
-  return useMemo(() => {
-    void version;
-    const values = Array.from(stateRef.current.categories.values()).map(
-      cloneCategory
-    );
-
-    return values.sort((a, b) => {
-      if (a.section !== b.section) {
-        return (
-          categorySectionPriority[a.section] -
-          categorySectionPriority[b.section]
-        );
-      }
-      if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
-        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-      }
-      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-    });
-  }, [stateRef, version]);
+  const { categoriesList } = useCategoryCache();
+  return categoriesList;
 };
 
 const buildBudgetSnapshot = (
@@ -248,3 +218,12 @@ export const cacheKeyForBudgetLine = (budgetId: string, categoryId: string) =>
 
 export const cacheKeyForIncomePlan = (budgetId: string, planId: string) =>
   toIncomePlanKey(budgetId, planId);
+
+export const useCategoryCache = (): CategoryCacheValue => {
+  const context = useContext(CacheContext);
+  if (!context) {
+    throw new Error("useCategoryCache must be used within a CacheProvider");
+  }
+
+  return context.categories;
+};

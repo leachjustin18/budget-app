@@ -12,7 +12,7 @@ import {
   type CategorySection,
   type IncomePlan,
   type RepeatCadence,
-} from "@budget/app/providers/cacheTypes";
+} from "@budget/lib/cache/types";
 
 class ApiError<T = unknown> extends Error {
   status: number;
@@ -283,8 +283,12 @@ const serializeSnapshot = (snapshot: BudgetSnapshot) => {
     amount: plan.amount,
   }));
 
-  const sections: Record<BudgetSectionKey, BudgetCategoryPayload[]> =
-    emptySections();
+  const sections: Record<BudgetSectionKey, BudgetCategoryPayload[]> = {
+    expenses: [],
+    recurring: [],
+    savings: [],
+    debt: [],
+  };
 
   for (const section of sectionKeyList) {
     sections[section] = (snapshot.sections[section] ?? []).map((line) => ({

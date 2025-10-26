@@ -1,4 +1,25 @@
 import type { MutableRefObject } from "react";
+import type { CacheKey } from "./keys";
+
+export type CacheGetter = <T>(key: CacheKey) => T | undefined;
+export type CacheSetter = <T>(key: CacheKey, value: T) => T;
+export type CacheDeleter = (key: CacheKey) => void;
+export type CacheMutator = <T>(
+  key: CacheKey,
+  updater: (current: T | undefined) => T | undefined
+) => T | undefined;
+export type CachePrefetcher = <T>(
+  key: CacheKey,
+  loader: () => Promise<T>
+) => Promise<T>;
+
+export type CacheDispatcher = {
+  get: CacheGetter;
+  set: CacheSetter;
+  delete: CacheDeleter;
+  mutate: CacheMutator;
+  prefetch: CachePrefetcher;
+};
 
 export type CategorySection = "EXPENSES" | "RECURRING" | "SAVINGS" | "DEBT";
 
@@ -99,11 +120,11 @@ export type CacheActions = {
     ): Promise<void>;
   };
   budgets: {
-    ensure(monthKey: string, options?: { force?: boolean }): Promise<BudgetSnapshot>;
-    save(
+    ensure(
       monthKey: string,
-      snapshot: BudgetSnapshot
+      options?: { force?: boolean }
     ): Promise<BudgetSnapshot>;
+    save(monthKey: string, snapshot: BudgetSnapshot): Promise<BudgetSnapshot>;
     clear(monthKey: string): void;
   };
   budgetLines: {

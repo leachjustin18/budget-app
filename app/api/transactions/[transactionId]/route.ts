@@ -6,9 +6,13 @@ import {
   computeTransactionFingerprint,
   ensureDefaultCategory,
   linkTransactionToBudget,
+  sanitizeMerchantName,
   syncBudgetSpentForMonth,
   toISODate,
 } from "@budget/lib/transactions";
+import { resolveMerchant } from "@budget/lib/merchantService";
+
+export const dynamic = "force-dynamic";
 
 const transactionInclude = {
   category: true,
@@ -17,6 +21,7 @@ const transactionInclude = {
     orderBy: { createdAt: "asc" as const },
   },
   importBatch: true,
+  merchantRef: true,
 } satisfies Prisma.TransactionInclude;
 
 const splitSchema = z.object({
@@ -31,7 +36,7 @@ const updateSchema = z
     amount: z.number().positive().optional(),
     type: z.enum(TransactionType).optional(),
     occurredOn: z.string().optional(),
-    postedOn: z.string().nullable().optional(),
+
     merchant: z.string().optional(),
     description: z.string().optional(),
     memo: z.string().optional().nullable(),
@@ -47,41 +52,56 @@ const mapTransaction = (
   transaction: Prisma.TransactionGetPayload<{
     include: typeof transactionInclude;
   }>
-) => ({
-  id: transaction.id,
-  occurredOn: toISODate(transaction.occurredOn),
-  postedOn: transaction.postedOn ? toISODate(transaction.postedOn) : null,
-  amount: serializeAmount(transaction.amount),
-  type: transaction.type,
-  origin: transaction.origin,
-  description: transaction.description ?? "",
-  merchant: transaction.merchant ?? "",
-  memo: transaction.memo ?? "",
-  categoryId: transaction.categoryId,
-  importBatchId: transaction.importBatchId,
-  isPending: transaction.isPending,
-  budgetId: transaction.budgetId,
-  splits: transaction.splits.map((split) => ({
-    id: split.id,
-    amount: serializeAmount(split.amount),
-    memo: split.memo ?? "",
-    category: split.category
+): Record<string, unknown> => {
+  const canonicalMerchant =
+    transaction.merchantRef?.canonicalName ?? transaction.merchant ?? "";
+
+  return {
+    id: transaction.id,
+    occurredOn: toISODate(transaction.occurredOn),
+
+    amount: serializeAmount(transaction.amount),
+    type: transaction.type,
+    origin: transaction.origin,
+    description: transaction.description ?? "",
+    merchantName: canonicalMerchant,
+    merchantId: transaction.merchantRef?.id ?? null,
+    merchant: transaction.merchantRef
       ? {
-          id: split.category.id,
-          name: split.category.name,
-          emoji: split.category.emoji ?? "✨",
-          section: split.category.section,
+          id: transaction.merchantRef.id,
+          canonicalName: transaction.merchantRef.canonicalName,
+          yelpId: transaction.merchantRef.yelpId,
         }
       : null,
-  })),
-});
+    memo: transaction.memo ?? "",
+    categoryId: transaction.categoryId,
+    importBatchId: transaction.importBatchId,
+    isPending: transaction.isPending,
+    budgetId: transaction.budgetId,
+    splits: transaction.splits.map((split) => ({
+      id: split.id,
+      amount: serializeAmount(split.amount),
+      memo: split.memo ?? "",
+      category: split.category
+        ? {
+            id: split.category.id,
+            name: split.category.name,
+            emoji: split.category.emoji ?? "✨",
+            section: split.category.section,
+          }
+        : null,
+    })),
+  };
+};
 
 export async function GET(
   _request: Request,
-  { params }: { params: { transactionId: string } }
+  ctx: RouteContext<"/api/transactions/[transactionId]">
 ) {
+  const { transactionId } = await ctx.params;
+
   const transaction = await prisma.transaction.findUnique({
-    where: { id: params.transactionId },
+    where: { id: transactionId },
     include: transactionInclude,
   });
 
@@ -97,8 +117,10 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { transactionId: string } }
+  ctx: RouteContext<"/api/transactions/[transactionId]">
 ) {
+  const { transactionId } = await ctx.params;
+
   const payload = await request.json().catch(() => null);
   const parsed = updateSchema.safeParse(payload);
 
@@ -114,7 +136,7 @@ export async function PATCH(
   try {
     const result = await prisma.$transaction(async (tx) => {
       const existing = await tx.transaction.findUnique({
-        where: { id: params.transactionId },
+        where: { id: transactionId },
         include: {
           splits: true,
         },
@@ -124,7 +146,7 @@ export async function PATCH(
         return null;
       }
 
-      const updates: Prisma.TransactionUpdateInput = {};
+      const updates: Prisma.TransactionUncheckedUpdateInput = {};
 
       const priorOccurredOn = existing.occurredOn;
 
@@ -141,11 +163,28 @@ export async function PATCH(
       const nextType = data.type ?? existing.type;
       updates.type = nextType;
 
-      const nextMerchant =
+      let nextMerchant =
         data.merchant !== undefined
           ? data.merchant?.trim() || null
           : existing.merchant;
+      let resolvedMerchantId = existing.merchantId ?? null;
+
+      if (data.merchant !== undefined) {
+        if (nextMerchant) {
+          const merchantResolution = await resolveMerchant(nextMerchant, {
+            tx,
+          });
+          nextMerchant =
+            merchantResolution?.canonicalName ?? nextMerchant ?? null;
+          resolvedMerchantId = merchantResolution?.merchantId ?? null;
+        } else {
+          nextMerchant = null;
+          resolvedMerchantId = null;
+        }
+      }
+
       updates.merchant = nextMerchant;
+      updates.merchantId = resolvedMerchantId;
 
       const nextDescription =
         data.description !== undefined
@@ -169,21 +208,6 @@ export async function PATCH(
         }
         nextOccurredOn = parsedDate;
         updates.occurredOn = parsedDate;
-      }
-
-      let nextPostedOn = existing.postedOn ?? null;
-      if (data.postedOn !== undefined) {
-        if (data.postedOn === null) {
-          nextPostedOn = null;
-          updates.postedOn = null;
-        } else {
-          const parsedDate = new Date(`${data.postedOn}T00:00:00.000Z`);
-          if (Number.isNaN(parsedDate.getTime())) {
-            throw new Error("Invalid postedOn date");
-          }
-          nextPostedOn = parsedDate;
-          updates.postedOn = parsedDate;
-        }
       }
 
       if (data.splits) {
@@ -219,11 +243,15 @@ export async function PATCH(
         }
       }
 
+      const fingerprintMerchant = nextMerchant
+        ? sanitizeMerchantName(nextMerchant)
+        : nextMerchant ?? undefined;
+
       const fingerprint = computeTransactionFingerprint({
         occurredOn: nextOccurredOn,
-        postedOn: nextPostedOn,
+
         amount: nextAmountDecimal,
-        merchant: nextMerchant ?? undefined,
+        merchant: fingerprintMerchant,
         description: nextDescription ?? undefined,
       });
 
@@ -287,11 +315,13 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { transactionId: string } }
+  ctx: RouteContext<"/api/transactions/[transactionId]">
 ) {
+  const { transactionId } = await ctx.params;
+
   try {
     const transaction = await prisma.transaction.delete({
-      where: { id: params.transactionId },
+      where: { id: transactionId },
     });
 
     if (!transaction) {

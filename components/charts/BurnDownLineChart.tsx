@@ -92,6 +92,7 @@ export function BurnDownLineChart({ data }: BurnDownLineChartProps) {
           strokeWidth={2}
           dot={{ r: 2 }}
           activeDot={{ r: 4 }}
+          isAnimationActive
         />
         <Line
           type="monotone"
@@ -101,6 +102,7 @@ export function BurnDownLineChart({ data }: BurnDownLineChartProps) {
           strokeDasharray="5 4"
           strokeWidth={2}
           dot={false}
+          isAnimationActive
         />
         {points
           .filter((point) => point.isToday)

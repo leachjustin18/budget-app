@@ -9,7 +9,14 @@ import {
   useState,
   type JSX,
 } from "react";
-import { Dialog, Transition } from "@headlessui/react";
+import {
+  Dialog,
+  Transition,
+  TransitionChild,
+  DialogPanel,
+  DialogTitle,
+  Description,
+} from "@headlessui/react";
 import Toast from "@budget/components/Toast";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
 import { Button } from "@budget/components/UI/Button";
@@ -21,6 +28,8 @@ import {
   useCategories,
   useBudgetByMonth,
 } from "@budget/app/hooks/useCache";
+
+import { monthKey } from "@budget/lib/helpers";
 
 type CategorySection = "EXPENSES" | "RECURRING" | "SAVINGS" | "DEBT";
 type RepeatCadence = "MONTHLY" | "ONCE";
@@ -178,6 +187,9 @@ function RuleEditorDialog({
 }: RuleEditorDialogProps) {
   const [state, setState] = useState<RuleFormState>(initialState);
 
+  const { actions } = useCache();
+  const { budgets } = actions;
+
   useEffect(() => {
     setState(initialState);
   }, [initialState]);
@@ -211,8 +223,10 @@ function RuleEditorDialog({
         name: state.name.trim(),
         matchValue: state.matchValue.trim(),
       });
+
+      budgets.clear(monthKey);
     },
-    [onSubmit, state]
+    [budgets, onSubmit, state]
   );
 
   const disableSubmit =
@@ -223,7 +237,7 @@ function RuleEditorDialog({
   return (
     <Transition show={isOpen} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-150"
           enterFrom="opacity-0"
@@ -233,10 +247,10 @@ function RuleEditorDialog({
           leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur-sm" />
-        </Transition.Child>
+        </TransitionChild>
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
+          <TransitionChild
             as={Fragment}
             enter="ease-out duration-150"
             enterFrom="opacity-0 scale-95"
@@ -245,15 +259,15 @@ function RuleEditorDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-xl space-y-6 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
+            <DialogPanel className="w-full max-w-xl space-y-6 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
               <div>
-                <Dialog.Title className="text-lg font-semibold text-emerald-950">
+                <DialogTitle className="text-lg font-semibold text-emerald-950">
                   {mode === "create" ? "Create new rule" : "Edit rule"}
-                </Dialog.Title>
-                <Dialog.Description className="mt-1 text-sm text-emerald-800/90">
+                </DialogTitle>
+                <Description className="mt-1 text-sm text-emerald-800/90">
                   Rules automatically categorize incoming transactions. You can
                   optionally reprocess existing matches.
-                </Dialog.Description>
+                </Description>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -427,8 +441,8 @@ function RuleEditorDialog({
                   </Button>
                 </div>
               </form>
-            </Dialog.Panel>
-          </Transition.Child>
+            </DialogPanel>
+          </TransitionChild>
         </div>
       </Dialog>
     </Transition>
@@ -454,7 +468,7 @@ function ToggleRuleDialog({
   return (
     <Transition show={isOpen} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-150"
           enterFrom="opacity-0"
@@ -464,9 +478,9 @@ function ToggleRuleDialog({
           leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur-sm" />
-        </Transition.Child>
+        </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
+          <TransitionChild
             as={Fragment}
             enter="ease-out duration-150"
             enterFrom="opacity-0 scale-95"
@@ -475,15 +489,15 @@ function ToggleRuleDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-sm space-y-4 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
-              <Dialog.Title className="text-lg font-semibold text-emerald-950">
+            <DialogPanel className="w-full max-w-sm space-y-4 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
+              <DialogTitle className="text-lg font-semibold text-emerald-950">
                 {prompt?.nextState ? "Enable rule?" : "Disable rule?"}
-              </Dialog.Title>
-              <Dialog.Description className="text-sm text-emerald-800/90">
+              </DialogTitle>
+              <Description className="text-sm text-emerald-800/90">
                 {prompt?.nextState
                   ? "Enable this rule to categorize future matches automatically."
                   : "Disabling the rule stops automatic categorization. You can optionally clear existing matches."}
-              </Dialog.Description>
+              </Description>
               {rule ? (
                 <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-900">
                   {describeRule(rule)}
@@ -509,8 +523,8 @@ function ToggleRuleDialog({
                     : "Disable & clear matches"}
                 </Button>
               </div>
-            </Dialog.Panel>
-          </Transition.Child>
+            </DialogPanel>
+          </TransitionChild>
         </div>
       </Dialog>
     </Transition>
@@ -532,10 +546,19 @@ function DeleteRuleDialog({
 }: DeleteRuleDialogProps) {
   const isOpen = Boolean(prompt);
 
+  const { actions } = useCache();
+  const { budgets } = actions;
+
+  const onDelete = async () => {
+    await onConfirm();
+
+    budgets.clear(monthKey);
+  };
+
   return (
     <Transition show={isOpen} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-150"
           enterFrom="opacity-0"
@@ -545,9 +568,9 @@ function DeleteRuleDialog({
           leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-emerald-950/30 backdrop-blur-sm" />
-        </Transition.Child>
+        </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
-          <Transition.Child
+          <TransitionChild
             as={Fragment}
             enter="ease-out duration-150"
             enterFrom="opacity-0 scale-95"
@@ -556,14 +579,14 @@ function DeleteRuleDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-sm space-y-4 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
-              <Dialog.Title className="text-lg font-semibold text-emerald-950">
+            <DialogPanel className="w-full max-w-sm space-y-4 rounded-3xl border border-emerald-200/70 bg-white/95 p-6 shadow-[0_24px_55px_rgba(15,118,110,0.28)]">
+              <DialogTitle className="text-lg font-semibold text-emerald-950">
                 Delete rule?
-              </Dialog.Title>
-              <Dialog.Description className="text-sm text-emerald-800/90">
+              </DialogTitle>
+              <Description className="text-sm text-emerald-800/90">
                 Removing a rule stops automatic categorization for future
                 matches. Existing transactions keep their current categories.
-              </Dialog.Description>
+              </Description>
               {prompt ? (
                 <div className="rounded-2xl border border-rose-200/60 bg-rose-50/70 px-4 py-3 text-sm text-rose-700">
                   {describeRule(prompt)}
@@ -575,14 +598,14 @@ function DeleteRuleDialog({
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => onConfirm()}
+                  onClick={onDelete}
                   loading={submitting}
                 >
                   Delete rule
                 </Button>
               </div>
-            </Dialog.Panel>
-          </Transition.Child>
+            </DialogPanel>
+          </TransitionChild>
         </div>
       </Dialog>
     </Transition>

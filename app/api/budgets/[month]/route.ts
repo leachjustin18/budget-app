@@ -11,10 +11,15 @@ import { prisma } from "@budget/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-const SECTION_KEYS = ["expenses", "recurring", "savings", "debt"] as const;
+const SECTION_KEYS: ["expenses", "recurring", "savings", "debt"] = [
+  "expenses",
+  "recurring",
+  "savings",
+  "debt",
+];
 type SectionKey = (typeof SECTION_KEYS)[number];
 
-const REPEAT_VALUES = ["monthly", "once"] as const;
+const REPEAT_VALUES = ["monthly", "once"];
 type RepeatValue = (typeof REPEAT_VALUES)[number];
 
 const sectionToDb: Record<SectionKey, CategorySection> = {
@@ -45,8 +50,8 @@ const BudgetCategorySchema = z.object({
   uuid: z.string().min(1),
   name: z.string().trim(),
   emoji: z.string().trim().min(1).max(8).optional().default("✨"),
-  planned: z.number().finite().nullable(),
-  spent: z.number().finite().nullable(),
+  planned: z.number().nullable(),
+  spent: z.number().nullable(),
   carryForward: z.boolean().default(false),
   repeat: z.enum(REPEAT_VALUES),
 });
@@ -61,7 +66,7 @@ const BudgetSectionsSchema = z.object({
 const IncomeLineSchema = z.object({
   uuid: z.string().min(1),
   source: z.string().trim(),
-  amount: z.number().finite().nullable(),
+  amount: z.number().nullable(),
 });
 
 const BudgetPayloadSchema = z.object({
@@ -70,19 +75,11 @@ const BudgetPayloadSchema = z.object({
 });
 
 type BudgetPayload = z.infer<typeof BudgetPayloadSchema>;
-
-type Mutable<T> = {
-  -readonly [K in keyof T]: T[K];
-};
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 const emptyBudget = (): BudgetPayload => ({
   income: [],
-  sections: {
-    expenses: [],
-    recurring: [],
-    savings: [],
-    debt: [],
-  },
+  sections: { expenses: [], recurring: [], savings: [], debt: [] },
 });
 
 const sanitizeBudget = (input: BudgetPayload): BudgetPayload => {
@@ -115,18 +112,10 @@ const sanitizeBudget = (input: BudgetPayload): BudgetPayload => {
         );
       return acc;
     },
-    {
-      expenses: [],
-      recurring: [],
-      savings: [],
-      debt: [],
-    }
+    { expenses: [], recurring: [], savings: [], debt: [] }
   );
 
-  return {
-    income: sanitizedIncome,
-    sections: sanitizedSections,
-  };
+  return { income: sanitizedIncome, sections: sanitizedSections };
 };
 
 const monthKeyToDate = (monthKey: string): Date | null => {
@@ -145,31 +134,26 @@ const ensureUser = async () => {
   if (!session?.user?.email) {
     return { type: "error" as const, status: 401, message: "Unauthorized" };
   }
-
   const email = session.user.email.toLowerCase();
-
-  // const user = await prisma.user.upsert({
-  //   where: { email },
-  //   update: {
-  //     name: session.user.name ?? undefined,
-  //     image: session.user.image ?? undefined,
-  //   },
-  //   create: {
-  //     email,
-  //     name: session.user.name ?? undefined,
-  //     image: session.user.image ?? undefined,
-  //   },
-  // });
-
   return { type: "success" as const, email, session };
 };
+
+const fetchBudgetWithRelations = async (month: Date) =>
+  prisma.budget.findUnique({
+    where: { month },
+    include: {
+      incomes: true,
+      allocations: {
+        include: { category: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
 
 const mapBudgetToPayload = (
   budget: Awaited<ReturnType<typeof fetchBudgetWithRelations>>
 ): BudgetPayload => {
-  if (!budget) {
-    return emptyBudget();
-  }
+  if (!budget) return emptyBudget();
 
   const sections: Mutable<BudgetPayload["sections"]> = {
     expenses: [],
@@ -201,36 +185,16 @@ const mapBudgetToPayload = (
       amount: Number(line.amount),
     }));
 
-  return {
-    income,
-    sections,
-  };
+  return { income, sections };
 };
 
-const fetchBudgetWithRelations = async (month: Date) =>
-  prisma.budget.findUnique({
-    where: {
-      month,
-    },
-    include: {
-      incomes: true,
-      allocations: {
-        include: {
-          category: true,
-        },
-        orderBy: {
-          createdAt: "asc",
-        },
-      },
-    },
-  });
+// ------ HANDLERS (Next 15.5.4 async params) ------
 
 export async function GET(
   _request: Request,
-  { params }: { params: { month: string } }
+  { params }: { params: Promise<{ month: string }> }
 ) {
-  const awaitedParams = await params;
-  const month = awaitedParams.month;
+  const { month } = await params;
   const monthDate = monthKeyToDate(month);
   if (!monthDate) {
     return NextResponse.json(
@@ -248,7 +212,6 @@ export async function GET(
   }
 
   const budget = await fetchBudgetWithRelations(monthDate);
-
   return NextResponse.json({
     month,
     budget: mapBudgetToPayload(budget),
@@ -258,12 +221,10 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { month: string } }
+  { params }: { params: Promise<{ month: string }> }
 ) {
-  const awaitedParams = await params;
-  const awaitedMonth = await awaitedParams.month;
-
-  const monthDate = monthKeyToDate(awaitedMonth);
+  const { month } = await params;
+  const monthDate = monthKeyToDate(month);
   if (!monthDate) {
     return NextResponse.json(
       { error: "Invalid month format" },
@@ -287,7 +248,7 @@ export async function PUT(
   const parsed = BudgetPayloadSchema.safeParse(json.budget);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.flatten() },
+      { error: z.treeifyError(parsed.error) },
       { status: 422 }
     );
   }
@@ -296,24 +257,18 @@ export async function PUT(
 
   const { responsePayload } = await prisma.$transaction(async (tx) => {
     const budget = await tx.budget.upsert({
-      where: {
-        month: monthDate,
-      },
+      where: { month: monthDate },
       update: {},
-      create: {
-        month: monthDate,
-        status: "DRAFT",
-      },
+      create: { month: monthDate, status: "DRAFT" },
     });
 
+    // ----- INCOME UPSERT -----
     const incomeInputs = budgetData.income;
     const existingIncome = await tx.budgetIncome.findMany({
       where: { budgetId: budget.id },
     });
 
-    const incomeMap = new Map(
-      existingIncome.map((income) => [income.id, income])
-    );
+    const incomeMap = new Map(existingIncome.map((i) => [i.id, i]));
     const incomingIncomeIds = new Set<string>();
     const incomeIdMapping = new Map<string, string>();
 
@@ -323,10 +278,7 @@ export async function PUT(
         incomingIncomeIds.add(line.uuid);
         await tx.budgetIncome.update({
           where: { id: line.uuid },
-          data: {
-            source: line.source,
-            amount: new Prisma.Decimal(amount),
-          },
+          data: { source: line.source, amount: new Prisma.Decimal(amount) },
         });
         incomeIdMapping.set(line.uuid, line.uuid);
       } else {
@@ -349,6 +301,7 @@ export async function PUT(
       }
     }
 
+    // ----- CATEGORY + ALLOCATIONS -----
     const sectionEntries = SECTION_KEYS.flatMap((sectionKey) =>
       budgetData.sections[sectionKey].map((category, index) => ({
         sectionKey,
@@ -358,20 +311,16 @@ export async function PUT(
     );
 
     const existingCategoryIds = sectionEntries
-      .map((entry) => entry.category.uuid)
-      .filter((id) => id);
+      .map((e) => e.category.uuid)
+      .filter(Boolean);
 
     const existingCategories = existingCategoryIds.length
       ? await tx.category.findMany({
-          where: {
-            id: { in: existingCategoryIds },
-          },
+          where: { id: { in: existingCategoryIds } },
         })
       : [];
 
-    const categoryMap = new Map(
-      existingCategories.map((item) => [item.id, item])
-    );
+    const categoryMap = new Map(existingCategories.map((c) => [c.id, c]));
     const categoryIdMapping = new Map<string, string>();
 
     for (const entry of sectionEntries) {
@@ -411,9 +360,7 @@ export async function PUT(
     const allocations = await tx.budgetAllocation.findMany({
       where: { budgetId: budget.id },
     });
-    const allocationMap = new Map(
-      allocations.map((allocation) => [`${allocation.categoryId}`, allocation])
-    );
+    const allocationMap = new Map(allocations.map((a) => [a.categoryId, a]));
 
     const incomingAllocationKeys = new Set<string>();
 
@@ -421,6 +368,7 @@ export async function PUT(
       const resolvedCategoryId =
         categoryIdMapping.get(entry.category.uuid) ?? entry.category.uuid;
       incomingAllocationKeys.add(resolvedCategoryId);
+
       const planned = entry.category.planned ?? 0;
       const spent = entry.category.spent ?? 0;
 
@@ -456,7 +404,7 @@ export async function PUT(
       }
     }
 
-    // Link transactions with budget categories if they exist but no budget relation yet.
+    // Link transactions to budget if in month window and missing relation
     await tx.transaction.updateMany({
       where: {
         budgetId: null,
@@ -474,9 +422,7 @@ export async function PUT(
           },
         ],
       },
-      data: {
-        budgetId: budget.id,
-      },
+      data: { budgetId: budget.id },
     });
 
     const resolvedIncome = incomeInputs.map((line) => ({
@@ -495,24 +441,16 @@ export async function PUT(
         }));
         return acc;
       },
-      {
-        expenses: [],
-        recurring: [],
-        savings: [],
-        debt: [],
-      }
+      { expenses: [], recurring: [], savings: [], debt: [] }
     );
 
     return {
-      responsePayload: {
-        income: resolvedIncome,
-        sections: resolvedSections,
-      },
+      responsePayload: { income: resolvedIncome, sections: resolvedSections },
     };
   });
 
   return NextResponse.json({
-    month: awaitedMonth,
+    month,
     budget: sanitizeBudget(responsePayload),
     exists: true,
   });
