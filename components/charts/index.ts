@@ -10,7 +10,6 @@ export * from "./InsightList";
 export * from "./IncomeVsOutflowChart";
 export * from "./SpendingCalendar";
 export * from "./IncomeAllocationRing";
-export * from "./NetCashSparkline";
 export * from "./TopEnvelopePaceChart";
 export * from "./EnvelopePlanStackedBars";
 export * from "./ExpenseMerchantBarRing";

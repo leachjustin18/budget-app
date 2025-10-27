@@ -7,7 +7,6 @@ import { formatCurrency, formatCompactCurrency } from "./formatters";
 type SpendingCalendarProps = {
   points: DashboardData["burnDown"]["points"];
   monthLabel: string;
-  dailyAllowance?: number | null;
 };
 
 type CalendarCell =
@@ -101,7 +100,6 @@ function getIntensity(amount: number, maxAmount: number): number {
 export const SpendingCalendar = memo(function SpendingCalendar({
   points,
   monthLabel,
-  dailyAllowance,
 }: SpendingCalendarProps) {
   const cells = useMemo(() => buildCalendar(points), [points]);
   const maxAmount = useMemo(

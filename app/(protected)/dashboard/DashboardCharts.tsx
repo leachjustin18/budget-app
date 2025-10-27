@@ -412,7 +412,6 @@ export default function DashboardCharts() {
         <SpendingCalendar
           points={burnDownForSelected.points}
           monthLabel={selectedSeries.label}
-          dailyAllowance={burnDownForSelected.dailyAllowance}
         />
       </ChartCard>
 
