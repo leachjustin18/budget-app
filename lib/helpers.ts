@@ -8,7 +8,7 @@ export const joinClassNames = (
 export const round = (value: number, fractionDigits = 2) =>
   Number.isFinite(value) ? Number(value.toFixed(fractionDigits)) : 0;
 
-export const toNumber = (value?: string | number | null): number => {
+export const toNumber = (value?: string | number | null | unknown): number => {
   if (value === null || value === undefined) return 0;
   if (typeof value === "number") return value;
   return Number(value);

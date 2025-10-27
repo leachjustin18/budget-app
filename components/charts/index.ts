@@ -11,3 +11,8 @@ export * from "./TopVendorsChart";
 export * from "./GoalProgressChart";
 export * from "./InsightList";
 export * from "./IncomeVsOutflowChart";
+export * from "./SpendingCalendar";
+export * from "./IncomeAllocationRing";
+export * from "./NetCashSparkline";
+export * from "./CategoryPacingBars";
+export * from "./TopEnvelopePaceChart";

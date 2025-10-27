@@ -48,7 +48,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 type SectionKey = "expenses" | "recurring" | "savings" | "debt";
 
 const SECTION_LABELS: Record<SectionKey, string> = {
-  expenses: "Living & Flexible",
+  expenses: "Living Expenses",
   recurring: "Recurring Bills",
   savings: "Savings Goals",
   debt: "Debt Payments",
