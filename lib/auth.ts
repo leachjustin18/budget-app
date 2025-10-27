@@ -1,57 +1,63 @@
-// auth.ts (or wherever you configure NextAuth)
-import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import NextAuth, {
+  type NextAuthOptions,
+  type Session,
+  type User,
+} from "next-auth";
+import type { AdapterUser } from "next-auth/adapters";
+import type { JWT } from "next-auth/jwt";
+import GoogleProvider from "next-auth/providers/google";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@budget/lib/prisma";
 
-export const {
-  handlers: { GET, POST },
-  auth,
-  signIn,
-  signOut,
-} = NextAuth({
+export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+  pages: {
+    signIn: "/login",
+    error: "/auth/error",
+  },
   providers: [
-    Google({
+    GoogleProvider({
       clientId: process.env.AUTH_GOOGLE_ID!,
       clientSecret: process.env.AUTH_GOOGLE_SECRET!,
       allowDangerousEmailAccountLinking: true,
     }),
   ],
-  pages: {
-    signIn: "/login",
-    error: "/auth/error",
-  },
   callbacks: {
-    /**
-     * Only allow sign-in if the email already exists in your User table.
-     * Returns false for a generic failure (no reason leaked to the user).
-     */
-    async signIn({ user }) {
+    // v4 types
+    async signIn({ user }: { user: User | AdapterUser }) {
       const email = user?.email?.toLowerCase() ?? null;
       if (!email) return false;
-
       const exists = await prisma.user.findUnique({ where: { email } });
-      if (!exists) return false; // generic failure only
-      return true;
+      return !!exists; // generic failure if not found
     },
 
-    /**
-     * Attach a stable `id` to session.user.
-     * Handle both database and jwt cases safely (token can be present depending on strategy).
-     */
-    async session({ session, token, user }) {
-      const id = user?.id ?? token?.sub ?? null;
+    async session({
+      session,
+      token,
+      user,
+    }: {
+      session: Session;
+      token: JWT;
+      user: User | AdapterUser;
+    }): Promise<Session> {
+      const id = (user as AdapterUser)?.id ?? token?.sub ?? null;
       if (session.user && id) {
-        // Cast to your augmented type (see next-auth.d.ts below)
         (session.user as typeof session.user & { id: string }).id = id;
       }
       return session;
     },
-    async redirect({ baseUrl }) {
-      // after login, redirect to /budget
+
+    async redirect({
+      baseUrl,
+    }: {
+      url: string;
+      baseUrl: string;
+    }): Promise<string> {
       return `${baseUrl}/budget`;
     },
   },
-});
+};
+
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };
