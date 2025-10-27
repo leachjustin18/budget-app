@@ -1,5 +1,4 @@
-export { auth as middleware } from "@budget/lib/auth";
-
+// protect only these routes (adjust as needed)
 export const config = {
   matcher: [
     "/dashboard/:path*",
