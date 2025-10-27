@@ -1250,6 +1250,19 @@ export default function BudgetPage() {
         </header>
 
         <section className="space-y-4 rounded-3xl border border-emerald-200/60 bg-white/95 p-6 shadow-[0_14px_36px_rgba(15,118,110,0.12)]">
+          <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
+            <SummaryRow label="💵 Planned Income" value={summary.totalIncome} />
+            <SummaryRow
+              label="💲 Planned Expenses"
+              value={summary.totalPlanned}
+            />
+            <SummaryRow
+              label="🧾 Remaining to Plan"
+              value={summary.remaining}
+              highlightNegative
+            />
+            <SummaryRow label="💸 Spent" value={summary.totalSpent} />
+          </div>
           <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-emerald-950">
@@ -1754,20 +1767,6 @@ export default function BudgetPage() {
                 </div>
               );
             })}
-          </div>
-
-          <div className="space-y-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-4">
-            <SummaryRow label="💵 Planned Income" value={summary.totalIncome} />
-            <SummaryRow
-              label="💲 Planned Expenses"
-              value={summary.totalPlanned}
-            />
-            <SummaryRow label="💸 Spent" value={summary.totalSpent} />
-            <SummaryRow
-              label="🧾 Remaining"
-              value={summary.remaining}
-              highlightNegative
-            />
           </div>
         </aside>
 

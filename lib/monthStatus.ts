@@ -10,9 +10,7 @@ const EPSILON = 0.01;
 
 const numeric = (value?: number | null) => Number(value ?? 0);
 
-const flattenLines = (
-  sections: BudgetSnapshot["sections"]
-): BudgetLine[] => {
+const flattenLines = (sections: BudgetSnapshot["sections"]): BudgetLine[] => {
   const result: BudgetLine[] = [];
   (Object.keys(sections) as BudgetSectionKey[]).forEach((key) => {
     result.push(...sections[key]);
@@ -25,6 +23,7 @@ export const getMonthStatus = (
   snapshot: BudgetSnapshot | null
 ): MonthStatus => {
   void monthKey;
+  console.log("snowap", snapshot);
   if (!snapshot) {
     return "budgeting";
   }
@@ -39,10 +38,7 @@ export const getMonthStatus = (
     (sum, line) => sum + numeric(line.planned),
     0
   );
-  const totalSpent = lines.reduce(
-    (sum, line) => sum + numeric(line.spent),
-    0
-  );
+  const totalSpent = lines.reduce((sum, line) => sum + numeric(line.spent), 0);
 
   const hasCategoryOverage = lines.some(
     (line) => numeric(line.spent) - numeric(line.planned) > EPSILON

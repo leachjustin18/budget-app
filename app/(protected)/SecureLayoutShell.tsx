@@ -270,17 +270,6 @@ export default function SecureLayoutShell({
                     "Keep tabs on the plan and spend intentionally."}
                 </p>
               </div>
-
-              <div className="hidden w-[120px] justify-end sm:flex">
-                <div className="rounded-2xl border border-emerald-700/20 bg-white/90 px-4 py-2 text-right">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">
-                    Status
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-emerald-950">
-                    On Track
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
         </header>

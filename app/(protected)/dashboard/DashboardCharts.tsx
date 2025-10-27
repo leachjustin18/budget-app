@@ -3,13 +3,12 @@
 import { useMemo, useState } from "react";
 import type { DashboardData } from "./data";
 import {
-  CategoryPacingBars,
   ChartCard,
   IncomeAllocationRing,
   MonthRangeSelector,
-  NetCashSparkline,
   TopEnvelopePaceChart,
   EnvelopePlanStackedBars,
+  ExpenseMerchantBarRing,
   SpendingCalendar,
 } from "@budget/components/charts";
 import {
@@ -133,6 +132,7 @@ export default function DashboardCharts() {
     categoryPlanActual,
     categoryHistory,
     burnDown,
+    topVendors,
     summary,
   } = data;
 
@@ -236,25 +236,9 @@ export default function DashboardCharts() {
 
   const positiveMonthCount = countPositiveMonths(monthlySeries, rangeMonthKeys);
 
-  const dailyAllowanceValue = burnDownForSelected.dailyAllowance ?? null;
-  const dailyVariance =
-    dailyAllowanceValue !== null
-      ? averageDailySpend - dailyAllowanceValue
-      : null;
-  const dailyVarianceText =
-    dailyVariance === null
-      ? null
-      : Math.abs(dailyVariance) < 0.01
-      ? "right on target"
-      : `${formatCurrency(Math.abs(dailyVariance))} ${
-          dailyVariance > 0 ? "over" : "under"
-        } target`;
-  const spendingFooter =
-    dailyAllowanceValue !== null && dailyVarianceText
-      ? `Average of ${formatCurrency(
-          averageDailySpend
-        )} per day (${dailyVarianceText}).`
-      : `Average of ${formatCurrency(averageDailySpend)} per day so far.`;
+  const spendingFooter = `Average of ${formatCurrency(
+    averageDailySpend
+  )} per day.`;
 
   const summaryTiles: SummaryTileProps[] = [
     {
@@ -368,6 +352,8 @@ export default function DashboardCharts() {
     paceChartLimit === "all"
       ? categorySnapshot.categories.length
       : Number.parseInt(paceChartLimit, 10) || 3;
+  const expenseMerchants = topVendors?.expenseMerchants ?? [];
+  const resolvedMerchantLimit = 5;
 
   return (
     <div className="space-y-8">
@@ -392,7 +378,7 @@ export default function DashboardCharts() {
           description="See how planned envelopes consume the month&rsquo;s income target."
           ariaLabel="Income allocation radial chart"
           minHeight={360}
-          className="xl:col-span-5"
+          className="xl:col-span-6"
         >
           <IncomeAllocationRing
             monthLabel={selectedSeries.label}
@@ -402,136 +388,71 @@ export default function DashboardCharts() {
         </ChartCard>
 
         <ChartCard
-          title="Net cash glide"
-          description="Track net cash month over month across the selected window."
-          ariaLabel="Net cash trend area chart"
-          minHeight={360}
-          className="xl:col-span-7"
+          title="Top 5 expense merchants"
+          description="Expenses funneled by merchants so you can see where the 💲 are landing."
+          ariaLabel="Expense merchants ranked by spend"
+          minHeight={520}
+          className="xl:col-span-6"
         >
-          <NetCashSparkline
-            series={monthlySeries}
-            monthKeys={rangeMonthKeys}
-            activeMonth={selectedMonth}
+          <ExpenseMerchantBarRing
+            merchants={expenseMerchants}
+            limit={resolvedMerchantLimit}
           />
         </ChartCard>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-12">
-        <ChartCard
-          title="Spending cadence"
-          description="Calendar lays out the month one day at a time so you can compare spend versus the daily target."
-          ariaLabel="Daily spending calendar"
-          minHeight={420}
-          className="xl:col-span-7"
-          footer={spendingFooter}
-        >
-          <SpendingCalendar
-            points={burnDownForSelected.points}
-            monthLabel={selectedSeries.label}
-            dailyAllowance={burnDownForSelected.dailyAllowance}
-          />
-        </ChartCard>
+      <ChartCard
+        title="Spending cadence"
+        description="Calendar lays out the month one day at a time so you can compare spend versus the daily target."
+        ariaLabel="Daily spending calendar"
+        minHeight={420}
+        className="xl:col-span-7"
+        footer={spendingFooter}
+      >
+        <SpendingCalendar
+          points={burnDownForSelected.points}
+          monthLabel={selectedSeries.label}
+          dailyAllowance={burnDownForSelected.dailyAllowance}
+        />
+      </ChartCard>
 
-        <ChartCard
-          title="At-risk outlook"
-          description="Months that project a net cash shortfall stay on your radar."
-          ariaLabel="At-risk month list"
-          role="presentation"
-          minHeight={420}
-          className="xl:col-span-5"
-        >
-          <div className="flex h-full flex-col justify-between">
-            {atRiskMonths.length > 0 ? (
-              <ul className="space-y-3 text-sm">
-                {atRiskMonths.map((month) => (
-                  <li
-                    key={month.monthKey}
-                    className="rounded-2xl border border-emerald-900/10 bg-rose-500/10 px-3 py-3 text-emerald-950 shadow-sm dark:border-rose-200/20 dark:bg-rose-500/20 dark:text-rose-50"
-                  >
-                    <p className="text-xs uppercase tracking-wide text-rose-700 dark:text-rose-100">
-                      {month.label}
-                    </p>
-                    <p className="mt-1 text-lg font-semibold">
-                      Deficit of {formatCurrency(Math.abs(month.net))}
-                    </p>
-                    <p className="mt-2 text-xs text-emerald-900/70 dark:text-emerald-100/70">
-                      Build a plan to trim envelopes or boost income before this
-                      month hits.
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="flex h-full flex-col items-start justify-center space-y-2 rounded-2xl border border-emerald-900/10 bg-white/70 p-4 text-sm text-emerald-900/80 dark:border-emerald-100/20 dark:bg-emerald-900/50 dark:text-emerald-100/80">
-                <p className="text-base font-semibold text-emerald-950 dark:text-emerald-50">
-                  No red flags in this window
-                </p>
-                <p>
-                  Keep glancing at the cash glide to ensure the buffer holds as
-                  new transactions land.
-                </p>
-              </div>
-            )}
-
-            <p className="mt-4 text-xs text-emerald-900/70 dark:text-emerald-100/70">
-              Thresholds come from your variance guardrails so you only see
-              material issues.
-            </p>
+      <ChartCard
+        title="Envelope pace check"
+        description="Actual spend pace compared to spreading the plan evenly across the month.  Use the drop down to pick how many envelopes to track."
+        ariaLabel="Envelope spend pace line charts"
+        minHeight={420}
+        actions={
+          <div className="flex items-center gap-2 text-xs">
+            <label
+              htmlFor="pace-limit"
+              className="text-emerald-900/70 dark:text-emerald-100/70"
+            >
+              Envelopes
+            </label>
+            <select
+              id="pace-limit"
+              value={paceChartLimit}
+              onChange={(event) =>
+                setPaceChartLimit(event.target.value as typeof paceChartLimit)
+              }
+              className="rounded-md border border-emerald-900/20 bg-white/80 px-2 py-1 text-emerald-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 dark:border-emerald-100/20 dark:bg-emerald-900/40 dark:text-emerald-100"
+            >
+              {paceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
-        </ChartCard>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <ChartCard
-          title="Envelope pace check"
-          description="Actual spend pace compared to spreading the plan evenly across the month.  Use the drop down to pick how many envelopes to track."
-          ariaLabel="Envelope spend pace line charts"
-          minHeight={420}
-          actions={
-            <div className="flex items-center gap-2 text-xs">
-              <label
-                htmlFor="pace-limit"
-                className="text-emerald-900/70 dark:text-emerald-100/70"
-              >
-                Envelopes
-              </label>
-              <select
-                id="pace-limit"
-                value={paceChartLimit}
-                onChange={(event) =>
-                  setPaceChartLimit(event.target.value as typeof paceChartLimit)
-                }
-                className="rounded-md border border-emerald-900/20 bg-white/80 px-2 py-1 text-emerald-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 dark:border-emerald-100/20 dark:bg-emerald-900/40 dark:text-emerald-100"
-              >
-                {paceOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          }
-        >
-          <TopEnvelopePaceChart
-            categories={categorySnapshot.categories}
-            totalDays={safeTotalDays}
-            currentDay={safeCurrentDay}
-            limit={resolvedPaceLimit}
-          />
-        </ChartCard>
-
-        <ChartCard
-          title="Envelope pacing"
-          description="Largest categories stack up actual spend against the planned envelope."
-          ariaLabel="Top envelope pacing bars"
-          minHeight={420}
-        >
-          <CategoryPacingBars
-            categories={categorySnapshot.categories}
-            totalActual={categorySnapshot.totalActual}
-          />
-        </ChartCard>
-      </div>
+        }
+      >
+        <TopEnvelopePaceChart
+          categories={categorySnapshot.categories}
+          totalDays={safeTotalDays}
+          currentDay={safeCurrentDay}
+          limit={resolvedPaceLimit}
+        />
+      </ChartCard>
 
       <ChartCard
         title="Plan vs. spend breakdown"
@@ -540,6 +461,53 @@ export default function DashboardCharts() {
         minHeight={520}
       >
         <EnvelopePlanStackedBars categories={categorySnapshot.categories} />
+      </ChartCard>
+
+      <ChartCard
+        title="At-risk outlook"
+        description="Months that project a net cash shortfall stay on your radar."
+        ariaLabel="At-risk month list"
+        role="presentation"
+        minHeight={420}
+      >
+        <div className="flex h-full flex-col justify-between">
+          {atRiskMonths.length > 0 ? (
+            <ul className="space-y-3 text-sm">
+              {atRiskMonths.map((month) => (
+                <li
+                  key={month.monthKey}
+                  className="rounded-2xl border border-emerald-900/10 bg-rose-500/10 px-3 py-3 text-emerald-950 shadow-sm dark:border-rose-200/20 dark:bg-rose-500/20 dark:text-rose-50"
+                >
+                  <p className="text-xs uppercase tracking-wide text-rose-700 dark:text-rose-100">
+                    {month.label}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    Deficit of {formatCurrency(Math.abs(month.net))}
+                  </p>
+                  <p className="mt-2 text-xs text-emerald-900/70 dark:text-emerald-100/70">
+                    Build a plan to trim envelopes or boost income before this
+                    month hits.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex h-full flex-col items-start justify-center space-y-2 rounded-2xl border border-emerald-900/10 bg-white/70 p-4 text-sm text-emerald-900/80 dark:border-emerald-100/20 dark:bg-emerald-900/50 dark:text-emerald-100/80">
+              <p className="text-base font-semibold text-emerald-950 dark:text-emerald-50">
+                No red flags in this window
+              </p>
+              <p>
+                Keep glancing at the cash glide to ensure the buffer holds as
+                new transactions land.
+              </p>
+            </div>
+          )}
+
+          <p className="mt-4 text-xs text-emerald-900/70 dark:text-emerald-100/70">
+            Thresholds come from your variance guardrails so you only see
+            material issues.
+          </p>
+        </div>
       </ChartCard>
     </div>
   );

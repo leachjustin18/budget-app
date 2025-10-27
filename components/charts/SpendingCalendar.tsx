@@ -22,9 +22,19 @@ type CalendarCell =
       key: string;
     };
 
-const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const weekdayLabels = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+] as const;
 
-function buildCalendar(points: SpendingCalendarProps["points"]): CalendarCell[] {
+function buildCalendar(
+  points: SpendingCalendarProps["points"]
+): CalendarCell[] {
   if (!points.length) {
     return [];
   }
@@ -115,14 +125,6 @@ export const SpendingCalendar = memo(function SpendingCalendar({
             {monthLabel}
           </h3>
         </div>
-        {dailyAllowance != null ? (
-          <p className="text-xs text-emerald-900/70 dark:text-emerald-100/70">
-            Target allowance{" "}
-            <span className="font-medium">
-              {formatCurrency(dailyAllowance)}
-            </span>
-          </p>
-        ) : null}
       </header>
 
       <div className="overflow-x-auto pb-1">
@@ -162,9 +164,9 @@ export const SpendingCalendar = memo(function SpendingCalendar({
                   className="flex h-20 flex-col justify-between rounded-2xl border bg-white/90 p-2 text-left shadow-sm transition dark:bg-emerald-900/60"
                   style={{ backgroundColor: background, borderColor: border }}
                   role="group"
-                  aria-label={`${monthLabel} ${cell.day}, spent ${formatCurrency(
-                    cell.amount
-                  )}`}
+                  aria-label={`${monthLabel} ${
+                    cell.day
+                  }, spent ${formatCurrency(cell.amount)}`}
                 >
                   <span className="text-xs font-semibold text-emerald-950 dark:text-emerald-50">
                     {cell.day}

@@ -192,6 +192,15 @@ type VendorInsight = {
   href: string;
 };
 
+type ExpenseMerchantInsight = {
+  key: string;
+  label: string;
+  total: number;
+  count: number;
+  merchantId: string | null;
+  href: string;
+};
+
 type TransactionInsight = {
   id: string;
   occurredOn: string;
@@ -304,6 +313,7 @@ export type DashboardData = {
     monthKey: string;
     vendors: VendorInsight[];
     transactions: TransactionInsight[];
+    expenseMerchants: ExpenseMerchantInsight[];
   };
   savingsProgress: {
     savings: GoalProgressEntry[];
@@ -686,6 +696,15 @@ export async function getDashboardData(): Promise<DashboardData> {
       merchantId: string | null;
     }
   >();
+  const expenseVendorTotals = new Map<
+    string,
+    {
+      label: string;
+      total: number;
+      count: number;
+      merchantId: string | null;
+    }
+  >();
   const topTransactionBuffer: Array<{
     id: string;
     occurredOn: Date;
@@ -732,6 +751,28 @@ export async function getDashboardData(): Promise<DashboardData> {
       const day = trx.occurredOn.getDate();
       dailyTotals.set(day, (dailyTotals.get(day) ?? 0) + amount);
 
+      let expensePortion = 0;
+      if (trx.splits.length > 0) {
+        for (const split of trx.splits) {
+          const splitAmount = round(toNumber(split.amount));
+          if (splitAmount <= 0) continue;
+          const categoryId = split.categoryId ?? UNCATEGORIZED_KEY;
+          const section =
+            categoryMeta.get(categoryId)?.section ?? "expenses";
+          if (section === "expenses") {
+            expensePortion += splitAmount;
+          }
+        }
+      } else {
+        const categoryId = trx.categoryId ?? UNCATEGORIZED_KEY;
+        const section =
+          categoryMeta.get(categoryId)?.section ?? "expenses";
+        if (section === "expenses") {
+          expensePortion += amount;
+        }
+      }
+      const expenseAmount = round(expensePortion);
+
       const canonicalVendor =
         trx.merchantRef?.canonicalName?.trim() ||
         trx.merchant?.trim() ||
@@ -749,6 +790,18 @@ export async function getDashboardData(): Promise<DashboardData> {
       vendor.count += 1;
       vendor.transactionIds.push(trx.id);
       vendorTotals.set(vendorKey, vendor);
+
+      if (expenseAmount > 0) {
+        const expenseVendor = expenseVendorTotals.get(vendorKey) ?? {
+          label: canonicalVendor,
+          total: 0,
+          count: 0,
+          merchantId: trx.merchantRef?.id ?? trx.merchantId ?? null,
+        };
+        expenseVendor.total += expenseAmount;
+        expenseVendor.count += 1;
+        expenseVendorTotals.set(vendorKey, expenseVendor);
+      }
 
       topTransactionBuffer.push({
         id: trx.id,
@@ -1175,6 +1228,19 @@ export async function getDashboardData(): Promise<DashboardData> {
     .sort((a, b) => b.total - a.total)
     .slice(0, TOP_VENDOR_LIMIT);
 
+  const expenseMerchants: ExpenseMerchantInsight[] = Array.from(
+    expenseVendorTotals.entries()
+  )
+    .map(([key, vendor]) => ({
+      key,
+      label: vendor.label,
+      total: round(vendor.total),
+      count: vendor.count,
+      merchantId: vendor.merchantId,
+      href: `/transactions?search=${encodeURIComponent(vendor.label)}`,
+    }))
+    .sort((a, b) => b.total - a.total);
+
   const transactions: TransactionInsight[] = topTransactionBuffer
     .sort((a, b) => b.amount - a.amount)
     .slice(0, TOP_TRANSACTION_LIMIT)
@@ -1504,6 +1570,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       monthKey: currentMonthKey,
       vendors,
       transactions,
+      expenseMerchants,
     },
     savingsProgress: {
       savings: savingsProgress,

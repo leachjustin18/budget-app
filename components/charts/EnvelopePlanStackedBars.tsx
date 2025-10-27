@@ -6,7 +6,6 @@ import {
   CartesianGrid,
   LabelList,
   Legend,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -190,16 +189,12 @@ export function EnvelopePlanStackedBars({
               }}
             />
             <Tooltip content={<CustomTooltip />} />
-            <ReferenceLine
-              x={0}
-              stroke="rgba(15,118,110,0.4)"
-              strokeDasharray="3 3"
-            />
             <Bar
               dataKey="planned"
               name="Planned"
               fill="rgba(0, 200, 255, 0.65)"
               barSize={26}
+              radius={[0, 12, 12, 0]}
             >
               <LabelList dataKey="planned" content={renderCustomizedLabel} />
             </Bar>
@@ -208,6 +203,7 @@ export function EnvelopePlanStackedBars({
               name="Remaining"
               fill="rgba(34,197,94,0.6)"
               barSize={26}
+              radius={[0, 12, 12, 0]}
             >
               <LabelList dataKey="remaining" content={renderCustomizedLabel} />
             </Bar>
@@ -217,6 +213,7 @@ export function EnvelopePlanStackedBars({
               name="Spent"
               fill="rgba(239,68,68,0.65)"
               barSize={26}
+              radius={[0, 12, 12, 0]}
             >
               <LabelList
                 dataKey="spentWithinPlan"
