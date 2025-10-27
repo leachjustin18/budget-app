@@ -1,73 +1,119 @@
 # Budget App
 
-Personal budgeting PWA built with Next.js App Router, TailwindCSS, and Prisma/Postgres. Auth is handled by NextAuth (Google). The app caches budget + category data on the client and provides CSV import of transactions with merchant normalization.
+Budgeting PWA tailored for tracking cash flow, category plans, and spending trends. The app runs on the Next.js App Router with Prisma/Postgres, provides Google-based authentication via NextAuth, and supports rich dashboards fed by CSV imports and merchant normalization.
 
-## Development
+## Key Features
+
+- Budget hub showing month status, variance alerts, and snapshot badges.
+- Cash-flow forecast, spending calendar, heatmaps, and merchant breakdown charts (Recharts).
+- CSV transaction import with alias resolution, Yelp-powered autocomplete, and manual overrides.
+- PWA experience via `next-pwa`, including offline caching of the latest budget snapshot.
+- Roleless Google OAuth sign-in (NextAuth) with Prisma adapter for persistence.
+
+## Technology Stack
+
+- Next.js 15 App Router with React 19 and TypeScript.
+- Tailwind CSS v4 and Headless UI for responsive UI primitives.
+- Prisma ORM with PostgreSQL backing (local dev + production).
+- Vitest + Node test runner for component and utility suites.
+- pnpm for package and workspace management.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+ (18+ works but Vercel defaults to 20).
+- pnpm 8+ (`npm install -g pnpm` if needed).
+- Locally reachable PostgreSQL database.
+- Yelp Fusion API key for merchant autocomplete (optional but recommended).
+
+### Installation
 
 ```bash
 pnpm install
-pnpm dev
 ```
 
-Other helpful commands:
+### Environment Variables
 
-- `pnpm lint` – runs ESLint (typed rules enabled)
-- `pnpm test` – runs Vitest unit suites
-- `pnpm prisma studio` – inspect data locally
-- `pnpm prisma migrate dev --name <migration>` – create a development migration
-
-## Environment Variables
-
-Create a `.env` file (or configure in Vercel) with:
+Create `.env` locally (or configure secrets in Vercel) with:
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | Postgres connection string |
+| `DATABASE_URL` | Postgres connection string used by Prisma |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google OAuth credentials for NextAuth |
-| `NEXTAUTH_URL` | Base URL for NextAuth callbacks |
-| `NEXTAUTH_SECRET` | Secret used by NextAuth |
-| `YELP_API_KEY` | Yelp Fusion API key used for merchant autocomplete |
-| `YELP_API_URL` | (Optional) Override Yelp autocomplete endpoint |
+| `NEXTAUTH_URL` | Base URL for NextAuth callbacks (e.g. `http://localhost:3000`) |
+| `NEXTAUTH_SECRET` | Secret used to sign NextAuth sessions |
+| `YELP_API_KEY` | Yelp Fusion API key for merchant autocomplete |
+| `YELP_API_URL` | Optional override for the Yelp autocomplete endpoint |
 
-`postinstall` runs `prisma generate`. The build script executes `prisma migrate deploy && next build --turbopack`, so ensure the database URL is available during builds.
+The `postinstall` hook runs `prisma generate`. Build scripts execute `prisma migrate deploy && next build`, so ensure `DATABASE_URL` is available during builds (local and CI/CD).
 
-## Database + Prisma
+### Database Setup
 
-- Run `pnpm prisma migrate dev` during development to evolve the schema.
-- Deployment uses `prisma migrate deploy` automatically (see `package.json` scripts).
+```bash
+pnpm prisma migrate dev --name init
+pnpm prisma db seed # add a seed script if/when available
+```
 
-## CSV Import / Merchant Resolution
+`pnpm prisma studio` opens Prisma Studio for quick data inspection.
 
-- When importing CSVs, merchant names are normalized via existing aliases or Yelp autocomplete.
-- If a merchant cannot be resolved, a modal prompts for a canonical name; responses are persisted through the `/api/merchants/resolve` endpoint.
+### Local Development
 
-## Budget Status Badge
+```bash
+pnpm dev        # start Next.js in development mode
+pnpm lint       # run ESLint (typed rules enabled)
+pnpm test       # compile test bundle and execute Node test suites
+```
 
-A responsive `MonthStatusBadge` component surfaces whether the current month is **Budgeting**, **On Track**, or **Over** based on the latest snapshot.
+Transactions imported in development persist to your configured Postgres database. Run `pnpm prisma migrate dev` whenever you evolve the schema.
 
-## Testing
+## CSV Imports & Merchant Resolution
 
-- Manual transaction form and merchant normalization utilities have Vitest coverage.
-- Run `pnpm test` (tests require the dev dependencies from `package.json`).
+- Upload CSV exports from your bank to seed transactions.
+- Merchant names are normalized against saved aliases; unresolved entries trigger a modal that records a canonical name via `/api/merchants/resolve`.
+- Yelp autocomplete improves suggestions when `YELP_API_KEY` is provided. Without a key, manual aliasing still works.
+- The importer highlights unsupported columns and produces a diff so you can confirm changes before applying them.
+
+## Dashboards & Insights
+
+- `DashboardCharts` combines cash-flow forecasts, category trends, spending calendar, and merchant spend distributions.
+- Variance thresholds and trend detection settings are centralized in `app/(protected)/dashboard/data.ts` for easier tuning.
+- The `MonthStatusBadge` flags the current month as **Budgeting**, **On Track**, or **Over** once actuals are compared against plan.
+
+## Project Structure
+
+- `app/` – Next.js App Router routes (`(protected)/dashboard` contains authenticated views).
+- `components/` – Shared UI, including chart visualizations under `components/charts`.
+- `lib/` – Prisma client, transaction helpers, and shared utilities.
+- `prisma/` – Prisma schema and migration history.
+- `types/` – TypeScript declaration files (augments NextAuth session typing).
 
 ## Deployment (Vercel)
 
-1. Create the Vercel project and point it at this repository.
-2. Set the environment variables listed above (production secrets, DB URL, Yelp key, etc.).
-3. Ensure the production Postgres database is reachable from Vercel.
-4. Vercel’s build command (`pnpm build`) runs `prisma migrate deploy` followed by `next build --turbopack`.
-5. `postinstall` runs `prisma generate` automatically.
-6. After the first deploy, verify OAuth callback URLs, Yelp credentials, and run smoke tests (CSV import, merchant resolutions, status badge).
+1. Create a Vercel project and connect this repository.
+2. Configure environment variables in the Vercel dashboard (production secrets, Postgres URL, Yelp API key).
+3. Provision a production Postgres database accessible from Vercel.
+4. Push to `main` to trigger the build (`pnpm build` runs `prisma migrate deploy` followed by `next build`).
+5. After the first deploy, verify Google OAuth redirect URIs, Yelp credentials, and smoke test CSV import + merchant resolution in production.
+6. Optionally configure a custom domain and rerun smoke tests after DNS cutover.
 
-### Next Steps Checklist
+## Release Workflow
 
-1. Create the Vercel project and connect it to Git.
-2. Add environment variables in Vercel (see table above).
-3. Provision Postgres and update `DATABASE_URL`.
-4. Push to `main` to trigger the first build/deploy.
-5. If necessary, run `npx prisma migrate deploy` via Vercel CLI or deployment hook.
-6. Update Google OAuth authorized domains/redirects.
-7. Confirm Yelp credentials in production.
-8. Smoke test the CSV import flow, merchant resolution modal, and month status badge.
-9. Configure a custom domain (optional).
+- New releases are tagged in GitHub and deployed via Vercel.
+- Update `RELEASE_NOTES.md` with a new section for each version (see initial `v1.0.0` entry).
+- Recommended cadence:
+  1. Land changes on `main`.
+  2. Draft the next release entry.
+  3. Tag the commit (`git tag vX.Y.Z && git push origin vX.Y.Z`).
+  4. Publish the GitHub Release and verify the Vercel deployment.
 
+## Troubleshooting
+
+- **Build fails because Prisma cannot reach the database** – ensure `DATABASE_URL` is set for the relevant environment (Vercel “Build & Development Settings”).
+- **OAuth callback errors** – check `NEXTAUTH_URL`, Google OAuth redirect URIs, and Vercel domain settings.
+- **Yelp API quota or timeout** – double-check the API key; set `YELP_API_URL` if using a proxy.
+- **Offline caching issues** – clear the service worker (`chrome://serviceworker-internals`) after schema changes that affect cached assets.
+
+## License
+
+This project is licensed under the terms of the included `LICENSE`.
