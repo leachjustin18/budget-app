@@ -16,3 +16,4 @@ export * from "./IncomeAllocationRing";
 export * from "./NetCashSparkline";
 export * from "./CategoryPacingBars";
 export * from "./TopEnvelopePaceChart";
+export * from "./EnvelopePlanStackedBars";

@@ -9,6 +9,7 @@ import {
   MonthRangeSelector,
   NetCashSparkline,
   TopEnvelopePaceChart,
+  EnvelopePlanStackedBars,
   SpendingCalendar,
 } from "@budget/components/charts";
 import {
@@ -531,6 +532,15 @@ export default function DashboardCharts() {
           />
         </ChartCard>
       </div>
+
+      <ChartCard
+        title="Plan vs. spend breakdown"
+        description="Planned, spent, and remaining across the envelopes with the largest plans."
+        ariaLabel="Stacked bars of planned versus actual spending for top envelopes"
+        minHeight={520}
+      >
+        <EnvelopePlanStackedBars categories={categorySnapshot.categories} />
+      </ChartCard>
     </div>
   );
 }
