@@ -1,0 +1,50 @@
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma migrate deploy && next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "pnpm test:build && node --test --loader ./scripts/alias-loader.mjs .tmp/tests/**/*.test.js && pnpm test:clean",
+    "test:build": "tsc -p tsconfig.tests.json",
+    "test:clean": "node -e \"require('fs').rmSync('.tmp/tests',{recursive:true,force:true});\"",
+    "test:ci": "pnpm test",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "@headlessui/react": "^2.2.9",
+    "@prisma/client": "^6.17.0",
+    "csv-parse": "^6.1.0",
+    "next": "15.5.4",
+    "next-auth": "5.0.0-beta.29",
+    "next-pwa": "^5.6.0",
+    "prisma": "^6.17.1",
+    "react": "19.1.0",
+    "react-currency-input-field": "^4.0.3",
+    "react-dom": "19.1.0",
+    "react-hook-form": "^7.65.0",
+    "react-is": "^19.2.0",
+    "recharts": "^3.2.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.1",
+    "jsdom": "^26.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

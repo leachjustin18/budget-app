@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CategorySection {
+  EXPENSES
+  RECURRING
+  SAVINGS
+  DEBT
+}
+
+enum RepeatCadence {
+  MONTHLY
+  ONCE
+}
+
+enum BudgetStatus {
+  DRAFT
+  FINALIZED
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+}
+
+enum TransactionOrigin {
+  MANUAL
+  IMPORT
+  ADJUSTMENT
+}
+
+enum RuleMatchField {
+  DESCRIPTION
+  MERCHANT
+  RAW
+}
+
+enum RuleMatchType {
+  CONTAINS
+  STARTS_WITH
+  ENDS_WITH
+  EXACT
+  REGEX
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Category {
+  id                   String             @id @default(cuid())
+  name                 String
+  emoji                String?            @default("✨")
+  section              CategorySection
+  carryForwardDefault  Boolean            @default(false)
+  repeatCadenceDefault RepeatCadence      @default(MONTHLY)
+  sortOrder            Int                @default(0)
+  archivedAt           DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  allocations          BudgetAllocation[]
+  transactions         Transaction[]
+  rules                Rule[]
+  transactionSplits    TransactionSplit[]
+
+  @@index([section, sortOrder])
+  @@index([archivedAt])
+}
+
+model Budget {
+  id                 String             @id @default(cuid())
+  month              DateTime
+  status             BudgetStatus       @default(DRAFT)
+  rolledFromBudgetId String?
+  notes              String?            @db.Text
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  rolledFromBudget   Budget?            @relation("BudgetRollup", fields: [rolledFromBudgetId], references: [id])
+  rolledForwardInto  Budget[]           @relation("BudgetRollup")
+  allocations        BudgetAllocation[]
+  incomes            BudgetIncome[]
+  transactions       Transaction[]
+
+  @@unique([month])
+  @@index([status])
+}
+
+model BudgetIncome {
+  id        String   @id @default(cuid())
+  budgetId  String
+  source    String
+  amount    Decimal  @default("0") @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  budget    Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@index([budgetId])
+}
+
+model BudgetAllocation {
+  id            String          @id @default(cuid())
+  budgetId      String
+  categoryId    String
+  section       CategorySection
+  plannedAmount Decimal         @default("0") @db.Decimal(12, 2)
+  spentAmount   Decimal         @default("0") @db.Decimal(12, 2)
+  carryForward  Boolean         @default(false)
+  repeatCadence RepeatCadence   @default(MONTHLY)
+  notes         String?         @db.Text
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  budget        Budget          @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  category      Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, categoryId])
+  @@index([budgetId, section])
+  @@index([categoryId])
+}
+
+model Transaction {
+  id            String             @id @default(cuid())
+  categoryId    String?
+  budgetId      String?
+  importBatchId String?
+  merchantId    String?
+  occurredOn    DateTime
+  amount        Decimal            @db.Decimal(12, 2)
+  type          TransactionType
+  origin        TransactionOrigin  @default(MANUAL)
+  description   String?
+  merchant      String?
+  memo          String?            @db.Text
+  externalId    String?
+  fingerprint   String?            @unique
+  isPending     Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  category      Category?          @relation(fields: [categoryId], references: [id])
+  budget        Budget?            @relation(fields: [budgetId], references: [id])
+  importBatch   ImportBatch?       @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  merchantRef   Merchant?          @relation("TransactionMerchant", fields: [merchantId], references: [id], onDelete: SetNull)
+  splits        TransactionSplit[]
+
+  @@unique([externalId])
+  @@index([occurredOn])
+  @@index([categoryId])
+  @@index([merchantId])
+}
+
+model Merchant {
+  id            String   @id @default(cuid())
+  canonicalName String   @unique
+  yelpId        String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  aliases      MerchantAlias[]
+  transactions Transaction[]   @relation("TransactionMerchant")
+}
+
+model MerchantAlias {
+  id         String   @id @default(cuid())
+  merchantId String
+  rawName    String
+  normalized String
+  yelpId     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, normalized])
+  @@index([normalized])
+}
+
+model ImportBatch {
+  id           String        @id @default(cuid())
+  source       String
+  fileName     String?
+  importedAt   DateTime      @default(now())
+  completedAt  DateTime?
+  transactions Transaction[]
+
+  @@index([importedAt])
+}
+
+model Rule {
+  id         String         @id @default(cuid())
+  categoryId String?
+  name       String
+  isActive   Boolean        @default(true)
+  matchField RuleMatchField @default(DESCRIPTION)
+  matchType  RuleMatchType  @default(CONTAINS)
+  matchValue String
+  config     Json?
+  priority   Int            @default(0)
+  lastRunAt  DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  category   Category?      @relation(fields: [categoryId], references: [id])
+
+  @@index([isActive, priority])
+}
+
+model TransactionSplit {
+  id            String      @id @default(cuid())
+  transactionId String
+  categoryId    String?
+  amount        Decimal     @db.Decimal(12, 2)
+  memo          String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  category      Category?   @relation(fields: [categoryId], references: [id])
+
+  @@index([transactionId])
+  @@index([categoryId])
+}
