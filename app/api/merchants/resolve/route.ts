@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveMerchant } from "@budget/lib/merchantService";
 import { prisma } from "@budget/lib/prisma";
 import { sanitizeMerchantName } from "@budget/lib/transactions";
+import { normalizeMerchantKey } from "@budget/lib/merchantNormalization";
 
 const schema = z.object({
   normalizedKey: z.string().min(1, "normalizedKey is required"),
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
 
   const { normalizedKey, canonicalName, rawName, yelpId } = parsed.data;
   const sanitizedCanonical = sanitizeMerchantName(canonicalName);
+  const sanitizedRaw = rawName ? sanitizeMerchantName(rawName) : null;
 
   if (!sanitizedCanonical) {
     return NextResponse.json(
@@ -48,16 +50,54 @@ export async function POST(request: Request) {
       );
     }
 
+    const possibleMatches = new Set<string>();
+    possibleMatches.add(sanitizedCanonical);
+    if (sanitizedRaw) {
+      possibleMatches.add(sanitizedRaw);
+    }
+
     await prisma.transaction.updateMany({
       where: {
         merchantId: null,
-        merchant: sanitizedCanonical,
+        merchant: { in: Array.from(possibleMatches).filter(Boolean) },
       },
       data: {
         merchantId: resolution.merchantId,
         merchant: resolution.canonicalName,
       },
     });
+
+    const normalizedTarget = normalizeMerchantKey(
+      resolution.normalizedKey || normalizedKey || sanitizedCanonical
+    );
+
+    if (normalizedTarget) {
+      const pendingTransactions = await prisma.transaction.findMany({
+        where: {
+          merchantId: null,
+          merchant: { not: null },
+        },
+        select: { id: true, merchant: true },
+      });
+
+      const matchingIds = pendingTransactions
+        .filter((transaction) =>
+          transaction.merchant
+            ? normalizeMerchantKey(transaction.merchant) === normalizedTarget
+            : false
+        )
+        .map((transaction) => transaction.id);
+
+      if (matchingIds.length > 0) {
+        await prisma.transaction.updateMany({
+          where: { id: { in: matchingIds } },
+          data: {
+            merchantId: resolution.merchantId,
+            merchant: resolution.canonicalName,
+          },
+        });
+      }
+    }
 
     return NextResponse.json({
       merchant: {
