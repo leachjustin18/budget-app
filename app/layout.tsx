@@ -23,8 +23,10 @@ export const metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
   viewportFit: "cover",
-  themeColor: "#0F172A",
+  themeColor: "#cff1d6",
 };
 
 const inter = Inter({
