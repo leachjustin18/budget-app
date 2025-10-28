@@ -6,7 +6,7 @@ import {
   RepeatCadence,
   TransactionType,
 } from "@prisma/client";
-import { auth } from "@budget/lib/auth";
+import { getSession } from "@budget/lib/auth-server";
 import { prisma } from "@budget/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -130,7 +130,7 @@ const monthKeyToDate = (monthKey: string): Date | null => {
 };
 
 const ensureUser = async () => {
-  const session = await auth();
+  const session = await getSession();
   if (!session?.user?.email) {
     return { type: "error" as const, status: 401, message: "Unauthorized" };
   }
