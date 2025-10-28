@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { auth } from "@budget/lib/auth";
+import { getSession } from "@budget/lib/auth-server";
 import { CacheProvider } from "@budget/app/providers/CacheProvider";
 import { buildInitialCache } from "@budget/lib/cache/hydration";
 import CachePrefetchGate from "./CachePrefetchGate";
@@ -12,7 +12,7 @@ type LayoutProps = {
 };
 
 export default async function SecureLayout({ children }: LayoutProps) {
-  const session = await auth();
+  const session = await getSession();
 
   if (!session?.user) {
     redirect("/login");

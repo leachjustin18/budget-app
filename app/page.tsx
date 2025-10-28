@@ -1,4 +1,4 @@
-import { auth } from "@budget/lib/auth";
+import { getSession } from "@budget/lib/auth-server";
 import { redirect } from "next/navigation";
 
 type CoinProps = {
@@ -128,7 +128,7 @@ const Coin = ({ id, className, symbol = "$" }: CoinProps) => {
 };
 
 export default async function Home() {
-  const session = await auth();
+  const session = await getSession();
 
   if (session?.user?.email) {
     // already signed in → go to your app
