@@ -30,13 +30,19 @@ import CategoryManagerDialog, {
   type ManagedCategory,
 } from "@budget/app/(protected)/budget/CategoryManagerDialog";
 import UnsavedChangesToast from "@budget/app/(protected)/budget/UnsavedChangesToast";
-import { useCache } from "@budget/app/hooks/useCache";
-import type { BudgetSnapshot } from "@budget/lib/cache/types";
+import {
+  fetchBudgetSnapshot,
+  saveBudgetSnapshot,
+} from "@budget/lib/api/budgets";
+import type {
+  BudgetLine,
+  BudgetSectionKey,
+  BudgetSnapshot,
+} from "@budget/lib/types/domain";
 import { getMonthStatus } from "@budget/lib/monthStatus";
 import { MonthStatusBadge } from "@budget/components/MonthStatusBadge";
 
-type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
-type RepeatCadence = "monthly" | "once";
+type RepeatCadence = BudgetLine["repeat"];
 
 type BudgetCategory = {
   uuid: string;
@@ -380,10 +386,6 @@ const useSectionArray = (
   });
 
 export default function BudgetPage() {
-  const { actions, selectors } = useCache();
-  const { getBudgetSnapshot } = selectors;
-  const ensureBudget = actions.budgets.ensure;
-  const saveBudget = actions.budgets.save;
   const baseDate = useMemo(() => new Date(), []);
   const [monthsData, setMonthsData] = useState<
     Record<string, BudgetFormValues>
@@ -491,33 +493,21 @@ export default function BudgetPage() {
   );
 
   const loadBudgetForMonth = useCallback(
-    async (monthKey: string) => {
+    async (monthKey: string, options?: { force?: boolean }) => {
+      if (!options?.force && monthsData[monthKey]) {
+        return monthsData[monthKey];
+      }
+
       setLoadingMonths((prev) => ({ ...prev, [monthKey]: true }));
       try {
-        let snapshot = getBudgetSnapshot(monthKey);
-        if (!snapshot) {
-          snapshot = await ensureBudget(monthKey);
-        }
-
-        if (snapshot) {
-          const sanitized = sanitizeBudgetValues(
-            snapshotToBudgetForm(snapshot)
-          );
-          setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
-          setMonthMetadata((prev) => ({
-            ...prev,
-            [monthKey]: { exists: snapshot.exists },
-          }));
-          return sanitized;
-        }
-
-        const blank = createEmptyBudgetForm();
-        setMonthsData((prev) => ({ ...prev, [monthKey]: blank }));
+        const snapshot = await fetchBudgetSnapshot(monthKey);
+        const sanitized = sanitizeBudgetValues(snapshotToBudgetForm(snapshot));
+        setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
         setMonthMetadata((prev) => ({
           ...prev,
-          [monthKey]: { exists: false },
+          [monthKey]: { exists: snapshot.exists },
         }));
-        return blank;
+        return sanitized;
       } catch (error) {
         console.error("Failed to load budget", error);
         pushToast({
@@ -541,7 +531,7 @@ export default function BudgetPage() {
         });
       }
     },
-    [ensureBudget, getBudgetSnapshot, pushToast]
+    [monthsData, pushToast]
   );
 
   useEffect(() => {
@@ -622,7 +612,7 @@ export default function BudgetPage() {
 
     setIsSaving(true);
     try {
-      const normalized = await saveBudget(currentMonthKey, snapshot);
+      const normalized = await saveBudgetSnapshot(currentMonthKey, snapshot);
       const normalizedForm = sanitizeBudgetValues(
         snapshotToBudgetForm(normalized)
       );
@@ -656,14 +646,7 @@ export default function BudgetPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [
-    draftValues,
-    currentMonthKey,
-    monthMetadata,
-    reset,
-    pushToast,
-    saveBudget,
-  ]);
+  }, [draftValues, currentMonthKey, monthMetadata, reset, pushToast]);
 
   const handleCopyPreviousMonth = useCallback(async () => {
     const previousDate = addMonths(currentDate, -1);
@@ -742,13 +725,15 @@ export default function BudgetPage() {
   }, [showFutureWarning, upsertToast, dismissToast, handleCopyPreviousMonth]);
 
   const summary = useMemo(() => calculateSummary(draftValues), [draftValues]);
-  const statusSnapshot = getBudgetSnapshot(currentMonthKey)
-    ? getBudgetSnapshot(currentMonthKey)
-    : budgetFormToSnapshot(
+  const statusSnapshot = useMemo(
+    () =>
+      budgetFormToSnapshot(
         currentMonthKey,
         draftValues,
         monthMetadata[currentMonthKey]?.exists ?? false
-      );
+      ),
+    [currentMonthKey, draftValues, monthMetadata]
+  );
   const currentMonthStatus = getMonthStatus(currentMonthKey, statusSnapshot);
 
   const monthLabel = useMemo(

@@ -32,9 +32,6 @@ importers:
       next-auth:
         specifier: 4.24.11
         version: 4.24.11(next@15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      next-pwa:
-        specifier: ^5.6.0
-        version: 5.6.0(@babel/core@7.28.4)(next@15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(webpack@5.102.1)
       prisma:
         specifier: ^6.17.1
         version: 6.17.1(typescript@5.9.3)
@@ -2861,11 +2858,6 @@ packages:
         optional: true
       nodemailer:
         optional: true
-
-  next-pwa@5.6.0:
-    resolution: {integrity: sha512-XV8g8C6B7UmViXU8askMEYhWwQ4qc/XqJGnexbLV68hzKaGHZDMtHsm2TNxFcbR7+ypVuth/wwpiIlMwpRJJ5A==}
-    peerDependencies:
-      next: '>=9.0.0'
 
   next@15.5.4:
     resolution: {integrity: sha512-xH4Yjhb82sFYQfY3vbkJfgSDgXvBB6a8xPs9i35k6oZJRoQRihZH+4s9Yo2qsWpzBmZ3lPXaJ2KPXLfkvW4LnA==}
@@ -6826,24 +6818,6 @@ snapshots:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)
       uuid: 8.3.2
-
-  next-pwa@5.6.0(@babel/core@7.28.4)(next@15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(webpack@5.102.1):
-    dependencies:
-      babel-loader: 8.4.1(@babel/core@7.28.4)(webpack@5.102.1)
-      clean-webpack-plugin: 4.0.0(webpack@5.102.1)
-      globby: 11.1.0
-      next: 15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
-      terser-webpack-plugin: 5.3.14(webpack@5.102.1)
-      workbox-webpack-plugin: 6.6.0(webpack@5.102.1)
-      workbox-window: 6.6.0
-    transitivePeerDependencies:
-      - '@babel/core'
-      - '@swc/core'
-      - '@types/babel__core'
-      - esbuild
-      - supports-color
-      - uglify-js
-      - webpack
 
   next@15.5.4(@babel/core@7.28.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
     dependencies:

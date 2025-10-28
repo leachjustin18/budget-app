@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { getMonthStatus } from "@budget/lib/monthStatus";
-import type { BudgetSnapshot, BudgetSectionKey } from "@budget/lib/cache/types";
+import type {
+  BudgetSectionKey,
+  BudgetSnapshot,
+} from "@budget/lib/types/domain";
 
 const createSnapshot = (
   income: number[],

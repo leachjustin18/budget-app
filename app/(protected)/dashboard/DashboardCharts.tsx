@@ -15,7 +15,6 @@ import {
   formatCurrency,
   formatPercent,
 } from "@budget/components/charts/formatters";
-import { useDashboardData } from "@budget/app/hooks/useDashboardData";
 
 type SummaryTileProps = {
   label: string;
@@ -124,8 +123,11 @@ const countPositiveMonths = (
       0
     );
 
-export default function DashboardCharts() {
-  const data = useDashboardData();
+type DashboardChartsProps = {
+  data: DashboardData;
+};
+
+export default function DashboardCharts({ data }: DashboardChartsProps) {
   const {
     months,
     monthlySeries,
@@ -157,18 +159,23 @@ export default function DashboardCharts() {
   const [paceChartLimit, setPaceChartLimit] =
     useState<(typeof paceOptions)[number]["value"]>("3");
 
-  const monthLookup = useMemo(
-    () =>
-      new Map(months.map((month, index) => [month.monthKey, { month, index }])),
-    [months]
-  );
+  const selectedIndex = useMemo(() => {
+    const exactIndex = months.findIndex(
+      (month) => month.monthKey === selectedMonth
+    );
+    if (exactIndex !== -1) {
+      return exactIndex;
+    }
 
-  const selectedMeta =
-    monthLookup.get(selectedMonth) ??
-    monthLookup.get(categoryPlanActual.monthKey) ??
-    [...monthLookup.values()].at(-1);
+    const fallbackIndex = months.findIndex(
+      (month) => month.monthKey === categoryPlanActual.monthKey
+    );
+    if (fallbackIndex !== -1) {
+      return fallbackIndex;
+    }
 
-  const selectedIndex = selectedMeta?.index ?? monthKeys.length - 1;
+    return Math.max(0, months.length - 1);
+  }, [months, selectedMonth, categoryPlanActual.monthKey]);
   const rangeStartIndex = Math.max(0, selectedIndex - (range - 1));
   const rangeMonthKeys = monthKeys.slice(rangeStartIndex, selectedIndex + 1);
 

@@ -1,16 +1,26 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { Button } from "@budget/components/UI/Button";
 import { type ToastProps } from "@budget/components/UI/ToastUI";
-import { useCache, useCategories } from "@budget/app/hooks/useCache";
 import {
-  type Category as CacheCategory,
-  type CategorySection,
-} from "@budget/app/providers/CacheProvider";
+  deleteCategory as apiDeleteCategory,
+  fetchCategories,
+  updateCategory as apiUpdateCategory,
+} from "@budget/lib/api/categories";
+import type {
+  Category,
+  CategorySection,
+} from "@budget/lib/types/domain";
 
-export type ManagedCategory = CacheCategory;
+export type ManagedCategory = Category;
 
 type ToastPayload = Omit<ToastProps, "id"> & { id?: string };
 
@@ -62,14 +72,7 @@ export default function CategoryManagerDialog({
   onCategoryRemoved,
   onCategoryUpdated,
 }: CategoryManagerDialogProps) {
-  const { actions } = useCache();
-  const { categories: categoryActions } = actions;
-  const {
-    refresh: refreshCategories,
-    update: updateCategory,
-    remove: removeCategory,
-  } = categoryActions;
-  const categoryList = useCategories();
+  const [categories, setCategories] = useState<ManagedCategory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -79,49 +82,50 @@ export default function CategoryManagerDialog({
     Record<string, { name: string; emoji: string }>
   >({});
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    if (categoryList.length > 0) {
-      setLoading(false);
+  const loadCategories = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
       setError(null);
-      return;
-    }
-
-    const abort = new AbortController();
-    let active = true;
-    setLoading(true);
-    setError(null);
-
-    refreshCategories(abort.signal)
-      .then(() => {
-        if (!active || abort.signal.aborted) return;
+      try {
+        const next = await fetchCategories(signal);
+        if (signal?.aborted) return;
+        setCategories(next);
         setDrafts({});
-        setError(null);
-      })
-      .catch((cause) => {
-        if (!active || abort.signal.aborted) return;
+      } catch (cause) {
+        if (signal?.aborted) return;
         console.error("Failed to load categories", cause);
-        setError(
+        const message =
           cause instanceof Error
             ? cause.message
-            : "Unable to load categories right now."
-        );
-      })
-      .finally(() => {
-        if (!active || abort.signal.aborted) return;
-        setLoading(false);
-      });
+            : "Unable to load categories right now.";
+        setError(message);
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (categories.length > 0) return;
+
+    const abortController = new AbortController();
+    void loadCategories(abortController.signal);
 
     return () => {
-      active = false;
-      abort.abort();
+      abortController.abort();
     };
-  }, [categoryList.length, isOpen, refreshCategories]);
+  }, [categories.length, isOpen, loadCategories]);
 
   const groupedCategories = useMemo(() => {
-    return categoryList.reduce<Record<CategorySection, ManagedCategory[]>>(
+    return categories.reduce<Record<CategorySection, ManagedCategory[]>>(
       (acc, category) => {
+        if (!acc[category.section]) {
+          acc[category.section] = [];
+        }
         acc[category.section].push(category);
         return acc;
       },
@@ -132,7 +136,7 @@ export default function CategoryManagerDialog({
         DEBT: [],
       }
     );
-  }, [categoryList]);
+  }, [categories]);
 
   const updateDraft = (id: string, field: "name" | "emoji", value: string) => {
     setDrafts((prev) => ({
@@ -168,7 +172,10 @@ export default function CategoryManagerDialog({
 
     setSavingId(category.id);
     try {
-      const updated = await updateCategory(category.id, updatePayload);
+      const updated = await apiUpdateCategory(category.id, updatePayload);
+      setCategories((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item))
+      );
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[category.id];
@@ -214,10 +221,13 @@ export default function CategoryManagerDialog({
     setDeletingId(category.id);
 
     try {
-      await removeCategory(category.id, {
-        transactionsTargetId: transactionsTargetId ?? undefined,
-        budgetTargetId: budgetTargetId ?? undefined,
+      await apiDeleteCategory(category.id, {
+        transactionsTargetId: transactionsTargetId ?? null,
+        budgetTargetId: budgetTargetId ?? null,
       });
+      setCategories((prev) =>
+        prev.filter((existing) => existing.id !== category.id)
+      );
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[category.id];
@@ -251,7 +261,7 @@ export default function CategoryManagerDialog({
     }
   };
 
-  const hasCategories = categoryList.length > 0;
+  const hasCategories = categories.length > 0;
 
   return (
     <Transition show={isOpen} as={Fragment}>
@@ -505,7 +515,7 @@ export default function CategoryManagerDialog({
 
                       <div className="space-y-2">
                         <label className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700/70">
-                          Move transactions to
+                          Reassign transactions to
                         </label>
                         <select
                           value={deleteDraft.transactionsTargetId ?? ""}
@@ -524,11 +534,9 @@ export default function CategoryManagerDialog({
                           }
                           className="w-full rounded-2xl border border-emerald-200/70 bg-white px-3 py-2 text-sm text-emerald-900 shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                         >
-                          <option value="">Leave uncategorized</option>
-                          {categoryList
-                            .filter(
-                              (item) => item.id !== deleteDraft.category.id
-                            )
+                          <option value="">Clear from transactions</option>
+                          {categories
+                            .filter((item) => item.id !== deleteDraft.category.id)
                             .map((item) => (
                               <option key={item.id} value={item.id}>
                                 {item.emoji} {item.name}
@@ -559,7 +567,7 @@ export default function CategoryManagerDialog({
                           className="w-full rounded-2xl border border-emerald-200/70 bg-white px-3 py-2 text-sm text-emerald-900 shadow-inner focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                         >
                           <option value="">Remove from budgets</option>
-                          {categoryList
+                          {categories
                             .filter(
                               (item) =>
                                 item.id !== deleteDraft.category.id &&
@@ -571,7 +579,7 @@ export default function CategoryManagerDialog({
                               </option>
                             ))}
                         </select>
-                        {categoryList.filter(
+                        {categories.filter(
                           (item) =>
                             item.id !== deleteDraft.category.id &&
                             item.section === deleteDraft.category.section

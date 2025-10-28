@@ -1,8 +1,8 @@
 import type {
   BudgetLine,
-  BudgetSnapshot,
   BudgetSectionKey,
-} from "@budget/lib/cache/types";
+  BudgetSnapshot,
+} from "@budget/lib/types/domain";
 
 export type MonthStatus = "budgeting" | "on_track" | "over";
 
@@ -23,7 +23,6 @@ export const getMonthStatus = (
   snapshot: BudgetSnapshot | null
 ): MonthStatus => {
   void monthKey;
-  console.log("snowap", snapshot);
   if (!snapshot) {
     return "budgeting";
   }

@@ -19,6 +19,7 @@ import type {
 } from "recharts/types/component/DefaultTooltipContent";
 import type { DashboardData } from "@budget/app/(protected)/dashboard/data";
 import { formatCurrency, formatPercent } from "./formatters";
+import { toNumber as toNumberHelper } from "@budget/lib/helpers";
 
 type CategoryEntry = DashboardData["categoryPlanActual"]["categories"][number];
 
@@ -60,7 +61,7 @@ const renderCustomizedLabel = (props: LabelProps) => {
         textAnchor="middle"
         dominantBaseline="middle"
       >
-        ${value}
+        {formatCurrency(toNumberHelper(value))}
       </text>
     </g>
   );
