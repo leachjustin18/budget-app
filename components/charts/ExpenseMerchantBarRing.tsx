@@ -104,7 +104,7 @@ export function ExpenseMerchantBarRing({
                 data={data}
                 dataKey="percent"
                 nameKey="label"
-                innerRadius="80%"
+                innerRadius="72%"
                 outerRadius="100%"
                 labelLine={false}
                 cornerRadius="50%"
