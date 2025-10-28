@@ -7,6 +7,9 @@
 - Retired the client cache layer so budgets, rules, and transactions always reflect real-time data without manual refreshes.
 - Dashboard now hydrates from server-provided data instead of a prefilled cache snapshot.
 - Use formatCurrency in EnvelopePlanStackedBars to ensure consistency on the format.
+- Fix issue of import transactions not overrwriting manual ones
+- Address styling issues on mobile
+- Update various button to have icons
 
 ### Changed
 
@@ -14,19 +17,14 @@
 - Updated budget, rules, and transaction flows to fetch and persist data through the new helpers and local component state.
 - Dashboard charts receive their dataset as props from the server layout.
 - Instead of outputing the raw value in EnvelopePlanStackedBars for the renderCustomizedLabel. It's now passed through the formatCurrency function to ensure correct format.
-
-### Removed
-
-- Removed the service worker/PWA setup (`next-pwa`, Workbox assets, and `sw.js`) along with all hydration/cache helpers.
+- Update the routes to link closer with the data recieved from the import
 
 ### Fixed
 
 - Eliminated stale UI states that previously required browser refreshes after edits.
-
-### Technical Notes
-
-- New utilities live under `lib/api/` and `lib/types/`; use them for any future data access.
-- Run `pnpm install` if tooling complains about dependency changes after pulling.
+- Bar chart not being visible on mobile
+- Number on bar chart not being visable
+- Manual transaction being overwritten by import.
 
 ### Known Issues / Follow-ups
 
