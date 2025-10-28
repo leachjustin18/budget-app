@@ -23,10 +23,7 @@ import type {
 } from "./types";
 import { getMonthKey, parseMonthKey } from "@budget/lib/transactions";
 import Modal from "@budget/components/Modal";
-import {
-  createCategory,
-  fetchCategories,
-} from "@budget/lib/api/categories";
+import { createCategory, fetchCategories } from "@budget/lib/api/categories";
 import { fetchBudgetSnapshot } from "@budget/lib/api/budgets";
 import type {
   BudgetSnapshot as BudgetSnapshotData,
@@ -137,9 +134,8 @@ export default function TransactionsPage() {
   const [isResolvingMerchant, setIsResolvingMerchant] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
-  const [budgetSnapshot, setBudgetSnapshot] = useState<BudgetSnapshotData | null>(
-    null
-  );
+  const [budgetSnapshot, setBudgetSnapshot] =
+    useState<BudgetSnapshotData | null>(null);
 
   useEffect(() => {
     if (merchantResolutionQueue.length === 0) {
@@ -791,13 +787,14 @@ export default function TransactionsPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => setIsCreateModalOpen(true)}>
+            <Button onClick={() => setIsCreateModalOpen(true)} iconLeading="✍️">
               Add manual transaction
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="tertiary"
               onClick={() => setIsImportModalOpen(true)}
+              iconLeading="📥"
             >
               Import CSV
             </Button>
@@ -934,7 +931,8 @@ export default function TransactionsPage() {
                     <Button
                       type="button"
                       size="sm"
-                      variant="ghost"
+                      variant="tertiary"
+                      iconLeading="📝"
                       onClick={() => handleTransactionEdit(transaction)}
                     >
                       Edit

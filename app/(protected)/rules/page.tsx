@@ -681,9 +681,8 @@ export default function RulesPage() {
   const [toggleSubmitting, setToggleSubmitting] = useState(false);
   const [deletePrompt, setDeletePrompt] = useState<RuleRecord | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [budgetSnapshot, setBudgetSnapshot] = useState<
-    BudgetSnapshotData | null
-  >(null);
+  const [budgetSnapshot, setBudgetSnapshot] =
+    useState<BudgetSnapshotData | null>(null);
   const [budgetRefreshId, setBudgetRefreshId] = useState(0);
 
   const dismissToast = useCallback((id?: string) => {
@@ -1107,10 +1106,11 @@ export default function RulesPage() {
                 </div>
               </div>
               <Button
-                variant="secondary"
+                variant="tertiary"
                 size="sm"
                 disabled={categories.length === 0}
                 onClick={() => openCreateDialog(category)}
+                iconLeading="➕"
               >
                 Add rule
               </Button>
@@ -1206,6 +1206,7 @@ export default function RulesPage() {
           <Button
             onClick={() => openCreateDialog()}
             disabled={categoriesLoading || categories.length === 0}
+            iconLeading="📏"
           >
             New rule
           </Button>
