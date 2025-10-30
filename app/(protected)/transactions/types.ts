@@ -1,4 +1,4 @@
-import type { CategorySection } from "@budget/app/providers/CacheProvider";
+import type { CategorySection } from "@budget/lib/types/domain";
 
 export type TransactionType = "EXPENSE" | "INCOME" | "TRANSFER";
 

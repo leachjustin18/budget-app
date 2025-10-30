@@ -30,13 +30,19 @@ import CategoryManagerDialog, {
   type ManagedCategory,
 } from "@budget/app/(protected)/budget/CategoryManagerDialog";
 import UnsavedChangesToast from "@budget/app/(protected)/budget/UnsavedChangesToast";
-import { useCache } from "@budget/app/hooks/useCache";
-import type { BudgetSnapshot } from "@budget/lib/cache/types";
+import {
+  fetchBudgetSnapshot,
+  saveBudgetSnapshot,
+} from "@budget/lib/api/budgets";
+import type {
+  BudgetLine,
+  BudgetSectionKey,
+  BudgetSnapshot,
+} from "@budget/lib/types/domain";
 import { getMonthStatus } from "@budget/lib/monthStatus";
 import { MonthStatusBadge } from "@budget/components/MonthStatusBadge";
 
-type BudgetSectionKey = "expenses" | "recurring" | "savings" | "debt";
-type RepeatCadence = "monthly" | "once";
+type RepeatCadence = BudgetLine["repeat"];
 
 type BudgetCategory = {
   uuid: string;
@@ -380,10 +386,6 @@ const useSectionArray = (
   });
 
 export default function BudgetPage() {
-  const { actions, selectors } = useCache();
-  const { getBudgetSnapshot } = selectors;
-  const ensureBudget = actions.budgets.ensure;
-  const saveBudget = actions.budgets.save;
   const baseDate = useMemo(() => new Date(), []);
   const [monthsData, setMonthsData] = useState<
     Record<string, BudgetFormValues>
@@ -491,33 +493,21 @@ export default function BudgetPage() {
   );
 
   const loadBudgetForMonth = useCallback(
-    async (monthKey: string) => {
+    async (monthKey: string, options?: { force?: boolean }) => {
+      if (!options?.force && monthsData[monthKey]) {
+        return monthsData[monthKey];
+      }
+
       setLoadingMonths((prev) => ({ ...prev, [monthKey]: true }));
       try {
-        let snapshot = getBudgetSnapshot(monthKey);
-        if (!snapshot) {
-          snapshot = await ensureBudget(monthKey);
-        }
-
-        if (snapshot) {
-          const sanitized = sanitizeBudgetValues(
-            snapshotToBudgetForm(snapshot)
-          );
-          setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
-          setMonthMetadata((prev) => ({
-            ...prev,
-            [monthKey]: { exists: snapshot.exists },
-          }));
-          return sanitized;
-        }
-
-        const blank = createEmptyBudgetForm();
-        setMonthsData((prev) => ({ ...prev, [monthKey]: blank }));
+        const snapshot = await fetchBudgetSnapshot(monthKey);
+        const sanitized = sanitizeBudgetValues(snapshotToBudgetForm(snapshot));
+        setMonthsData((prev) => ({ ...prev, [monthKey]: sanitized }));
         setMonthMetadata((prev) => ({
           ...prev,
-          [monthKey]: { exists: false },
+          [monthKey]: { exists: snapshot.exists },
         }));
-        return blank;
+        return sanitized;
       } catch (error) {
         console.error("Failed to load budget", error);
         pushToast({
@@ -541,7 +531,7 @@ export default function BudgetPage() {
         });
       }
     },
-    [ensureBudget, getBudgetSnapshot, pushToast]
+    [monthsData, pushToast]
   );
 
   useEffect(() => {
@@ -622,7 +612,7 @@ export default function BudgetPage() {
 
     setIsSaving(true);
     try {
-      const normalized = await saveBudget(currentMonthKey, snapshot);
+      const normalized = await saveBudgetSnapshot(currentMonthKey, snapshot);
       const normalizedForm = sanitizeBudgetValues(
         snapshotToBudgetForm(normalized)
       );
@@ -656,14 +646,7 @@ export default function BudgetPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [
-    draftValues,
-    currentMonthKey,
-    monthMetadata,
-    reset,
-    pushToast,
-    saveBudget,
-  ]);
+  }, [draftValues, currentMonthKey, monthMetadata, reset, pushToast]);
 
   const handleCopyPreviousMonth = useCallback(async () => {
     const previousDate = addMonths(currentDate, -1);
@@ -742,13 +725,15 @@ export default function BudgetPage() {
   }, [showFutureWarning, upsertToast, dismissToast, handleCopyPreviousMonth]);
 
   const summary = useMemo(() => calculateSummary(draftValues), [draftValues]);
-  const statusSnapshot = getBudgetSnapshot(currentMonthKey)
-    ? getBudgetSnapshot(currentMonthKey)
-    : budgetFormToSnapshot(
+  const statusSnapshot = useMemo(
+    () =>
+      budgetFormToSnapshot(
         currentMonthKey,
         draftValues,
         monthMetadata[currentMonthKey]?.exists ?? false
-      );
+      ),
+    [currentMonthKey, draftValues, monthMetadata]
+  );
   const currentMonthStatus = getMonthStatus(currentMonthKey, statusSnapshot);
 
   const monthLabel = useMemo(
@@ -1272,10 +1257,17 @@ export default function BudgetPage() {
                 Add each source you plan to receive this month.
               </p>
             </div>
-            <Button size="sm" variant="primary" onClick={handleAddIncome}>
-              Add income
-            </Button>
           </header>
+
+          <Button
+            size="sm"
+            variant="tertiary"
+            onClick={handleAddIncome}
+            className="text-emerald-700"
+            iconLeading="💰"
+          >
+            Add income
+          </Button>
 
           <div className="space-y-3">
             {incomeFields.length === 0 ? (
@@ -1302,9 +1294,27 @@ export default function BudgetPage() {
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                     <div className="flex-1">
-                      <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
-                        Source
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-800/70">
+                          Source
+                        </label>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="tertiary"
+                          className="text-red-700"
+                          iconTrailing="🗑️"
+                          onClick={() =>
+                            handleRemoveIncome(
+                              index,
+                              liveValue?.source ?? "this income"
+                            )
+                          }
+                        >
+                          Delete
+                        </Button>
+                      </div>
                       <input
                         type="text"
                         {...formMethods.register(
@@ -1335,19 +1345,6 @@ export default function BudgetPage() {
                         )}
                       />
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() =>
-                        handleRemoveIncome(
-                          index,
-                          liveValue?.source ?? "this income"
-                        )
-                      }
-                    >
-                      Remove
-                    </Button>
                   </div>
                 </div>
               );
@@ -1368,7 +1365,13 @@ export default function BudgetPage() {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Menu as="div" className="relative inline-block text-left">
-                <MenuButton as={Button} size="sm" variant="secondary">
+                <MenuButton
+                  as={Button}
+                  size="sm"
+                  variant="tertiary"
+                  className="text-emerald-700"
+                  iconLeading="💵"
+                >
                   Add category
                 </MenuButton>
                 <Transition
@@ -1412,16 +1415,18 @@ export default function BudgetPage() {
                   </MenuItems>
                 </Transition>
               </Menu>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="justify-center text-emerald-700 hover:bg-emerald-50"
-                onClick={() => setCategoryManagerOpen(true)}
-              >
-                Manage categories
-              </Button>
             </div>
           </div>
+
+          <Button
+            size="sm"
+            variant="tertiary"
+            iconLeading="🗃️"
+            className="text-emerald-700 max-sm:mb-5"
+            onClick={() => setCategoryManagerOpen(true)}
+          >
+            Manage categories
+          </Button>
 
           <div className="space-y-6">
             {(
@@ -1587,9 +1592,90 @@ export default function BudgetPage() {
                                   />
                                 </div>
                               </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                              <Controller
+                                control={control}
+                                name={
+                                  `sections.${section}.${index}.repeat` as const
+                                }
+                                render={({ field: repeatField }) => (
+                                  <div className="flex items-center gap-1 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-1">
+                                    {(
+                                      ["monthly", "once"] as RepeatCadence[]
+                                    ).map((value) => (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() =>
+                                          repeatField.onChange(value)
+                                        }
+                                        className={joinClassNames(
+                                          "rounded-xl px-3 py-1.5 text-xs font-semibold transition",
+                                          repeatField.value === value
+                                            ? "bg-white text-emerald-900 shadow"
+                                            : "text-emerald-700 hover:bg-white/70"
+                                        )}
+                                      >
+                                        {value === "monthly"
+                                          ? "Monthly"
+                                          : "This month"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              />
+                              <Controller
+                                control={control}
+                                name={
+                                  `sections.${section}.${index}.carryForward` as const
+                                }
+                                render={({ field: carryField }) => (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      carryField.onChange(!carryField.value)
+                                    }
+                                    className={joinClassNames(
+                                      "flex items-center gap-2 rounded-2xl border px-3 py-1.5 text-xs font-semibold transition",
+                                      carryField.value
+                                        ? "border-emerald-400 bg-emerald-50 text-emerald-900"
+                                        : "border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300"
+                                    )}
+                                  >
+                                    <span
+                                      className={joinClassNames(
+                                        "grid size-4 place-items-center rounded-full border",
+                                        carryField.value
+                                          ? "border-emerald-500 bg-emerald-500"
+                                          : "border-emerald-400"
+                                      )}
+                                    >
+                                      {carryField.value ? (
+                                        <svg
+                                          aria-hidden
+                                          className="size-3 text-white"
+                                          viewBox="0 0 24 24"
+                                          role="img"
+                                        >
+                                          <path
+                                            d="m10.22 15.28-2.47-2.47a.75.75 0 0 1 1.06-1.06l1.94 1.94 4.44-4.44a.75.75 0 0 1 1.06 1.06l-4.97 4.97a.75.75 0 0 1-1.06 0"
+                                            fill="currentColor"
+                                          />
+                                        </svg>
+                                      ) : null}
+                                    </span>
+                                    Carry leftover forward
+                                  </button>
+                                )}
+                              />
+
                               <Button
                                 size="sm"
-                                variant="destructive"
+                                variant="tertiary"
+                                iconTrailing="🗑️"
+                                className="text-red-700"
                                 onClick={() =>
                                   handleRemoveCategory(
                                     section,
@@ -1598,88 +1684,8 @@ export default function BudgetPage() {
                                   )
                                 }
                               >
-                                Remove
+                                Delete
                               </Button>
-                            </div>
-
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                              <div className="flex items-center gap-3">
-                                <Controller
-                                  control={control}
-                                  name={
-                                    `sections.${section}.${index}.repeat` as const
-                                  }
-                                  render={({ field: repeatField }) => (
-                                    <div className="flex items-center gap-1 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-1">
-                                      {(
-                                        ["monthly", "once"] as RepeatCadence[]
-                                      ).map((value) => (
-                                        <button
-                                          key={value}
-                                          type="button"
-                                          onClick={() =>
-                                            repeatField.onChange(value)
-                                          }
-                                          className={joinClassNames(
-                                            "rounded-xl px-3 py-1.5 text-xs font-semibold transition",
-                                            repeatField.value === value
-                                              ? "bg-white text-emerald-900 shadow"
-                                              : "text-emerald-700 hover:bg-white/70"
-                                          )}
-                                        >
-                                          {value === "monthly"
-                                            ? "Monthly"
-                                            : "This month"}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                />
-                                <Controller
-                                  control={control}
-                                  name={
-                                    `sections.${section}.${index}.carryForward` as const
-                                  }
-                                  render={({ field: carryField }) => (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        carryField.onChange(!carryField.value)
-                                      }
-                                      className={joinClassNames(
-                                        "flex items-center gap-2 rounded-2xl border px-3 py-1.5 text-xs font-semibold transition",
-                                        carryField.value
-                                          ? "border-emerald-400 bg-emerald-50 text-emerald-900"
-                                          : "border-emerald-200 bg-white text-emerald-700 hover:border-emerald-300"
-                                      )}
-                                    >
-                                      <span
-                                        className={joinClassNames(
-                                          "grid size-4 place-items-center rounded-full border",
-                                          carryField.value
-                                            ? "border-emerald-500 bg-emerald-500"
-                                            : "border-emerald-400"
-                                        )}
-                                      >
-                                        {carryField.value ? (
-                                          <svg
-                                            aria-hidden
-                                            className="size-3 text-white"
-                                            viewBox="0 0 24 24"
-                                            role="img"
-                                          >
-                                            <path
-                                              d="m10.22 15.28-2.47-2.47a.75.75 0 0 1 1.06-1.06l1.94 1.94 4.44-4.44a.75.75 0 0 1 1.06 1.06l-4.97 4.97a.75.75 0 0 1-1.06 0"
-                                              fill="currentColor"
-                                            />
-                                          </svg>
-                                        ) : null}
-                                      </span>
-                                      Carry leftover forward
-                                    </button>
-                                  )}
-                                />
-                              </div>
                               <div className="flex flex-1 flex-col gap-2">
                                 <div className="flex items-center justify-between text-xs font-medium text-emerald-800/90">
                                   <span>

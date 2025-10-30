@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type JSX,
 } from "react";
@@ -23,13 +22,12 @@ import { Button } from "@budget/components/UI/Button";
 import { Switch } from "@budget/components/UI/Switch";
 import { joinClassNames } from "@budget/lib/helpers";
 import { getMonthKey } from "@budget/lib/transactions";
-import {
-  useCache,
-  useCategories,
-  useBudgetByMonth,
-} from "@budget/app/hooks/useCache";
-
-import { monthKey } from "@budget/lib/helpers";
+import { fetchCategories } from "@budget/lib/api/categories";
+import { fetchBudgetSnapshot } from "@budget/lib/api/budgets";
+import type {
+  BudgetSnapshot as BudgetSnapshotData,
+  Category,
+} from "@budget/lib/types/domain";
 
 type CategorySection = "EXPENSES" | "RECURRING" | "SAVINGS" | "DEBT";
 type RepeatCadence = "MONTHLY" | "ONCE";
@@ -166,6 +164,16 @@ const createLocalId = () =>
     ? crypto.randomUUID()
     : `toast-${Math.random().toString(36).slice(2, 10)}`;
 
+const mapCategoryToSummary = (category: Category): CategorySummary => ({
+  id: category.id,
+  name: category.name,
+  emoji: category.emoji,
+  section: category.section as CategorySection,
+  carryForwardDefault: category.carryForwardDefault,
+  repeatCadenceDefault: category.repeatCadenceDefault,
+  usage: category.usage,
+});
+
 type RuleEditorDialogProps = {
   isOpen: boolean;
   mode: "create" | "edit";
@@ -186,9 +194,6 @@ function RuleEditorDialog({
   submitting,
 }: RuleEditorDialogProps) {
   const [state, setState] = useState<RuleFormState>(initialState);
-
-  const { actions } = useCache();
-  const { budgets } = actions;
 
   useEffect(() => {
     setState(initialState);
@@ -223,10 +228,8 @@ function RuleEditorDialog({
         name: state.name.trim(),
         matchValue: state.matchValue.trim(),
       });
-
-      budgets.clear(monthKey);
     },
-    [budgets, onSubmit, state]
+    [onSubmit, state]
   );
 
   const disableSubmit =
@@ -546,15 +549,6 @@ function DeleteRuleDialog({
 }: DeleteRuleDialogProps) {
   const isOpen = Boolean(prompt);
 
-  const { actions } = useCache();
-  const { budgets } = actions;
-
-  const onDelete = async () => {
-    await onConfirm();
-
-    budgets.clear(monthKey);
-  };
-
   return (
     <Transition show={isOpen} as={Fragment}>
       <Dialog onClose={onClose} className="relative z-50">
@@ -598,7 +592,7 @@ function DeleteRuleDialog({
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={onDelete}
+                  onClick={onConfirm}
                   loading={submitting}
                 >
                   Delete rule
@@ -663,8 +657,8 @@ function RuleRow({ rule, onEdit, onToggle, onDelete }: RuleRowProps) {
 }
 
 export default function RulesPage() {
-  const { actions } = useCache();
-  const categories = useCategories();
+  const [categories, setCategories] = useState<CategorySummary[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [rules, setRules] = useState<RuleRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -687,6 +681,9 @@ export default function RulesPage() {
   const [toggleSubmitting, setToggleSubmitting] = useState(false);
   const [deletePrompt, setDeletePrompt] = useState<RuleRecord | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [budgetSnapshot, setBudgetSnapshot] =
+    useState<BudgetSnapshotData | null>(null);
+  const [budgetRefreshId, setBudgetRefreshId] = useState(0);
 
   const dismissToast = useCallback((id?: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -704,27 +701,65 @@ export default function RulesPage() {
     []
   );
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setCategoriesLoading(true);
+    fetchCategories(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setCategories(list.map(mapCategoryToSummary));
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.warn("Failed to load categories", error);
+        pushToast({
+          title: "Couldn’t load categories",
+          description:
+            error instanceof Error ? error.message : "Unexpected error",
+          variant: "danger",
+        });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCategoriesLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [pushToast]);
+
   const categoriesLookup = useMemo(() => {
-    const map = new Map<string, CategorySummary>();
-    for (const category of categories) {
-      map.set(category.id, category);
-    }
-    return map;
+    return categories.reduce<Record<string, CategorySummary>>(
+      (accumulator, category) => {
+        accumulator[category.id] = category;
+        return accumulator;
+      },
+      {}
+    );
   }, [categories]);
 
   const currentMonthKey = useMemo(() => getMonthKey(new Date()), []);
-  const budgetSnapshot = useBudgetByMonth(currentMonthKey);
-  const ensureBudget = actions.budgets.ensure;
-  const budgetEnsureAttempted = useRef(false);
+  const requestBudgetRefresh = useCallback(() => {
+    setBudgetRefreshId((prev) => prev + 1);
+  }, []);
 
   useEffect(() => {
-    if (budgetSnapshot || budgetEnsureAttempted.current) return;
-    budgetEnsureAttempted.current = true;
-    void ensureBudget(currentMonthKey).catch((error) => {
-      console.warn("Failed to ensure budget snapshot", error);
-      budgetEnsureAttempted.current = false;
-    });
-  }, [budgetSnapshot, currentMonthKey, ensureBudget]);
+    let active = true;
+    fetchBudgetSnapshot(currentMonthKey)
+      .then((snapshot) => {
+        if (!active) return;
+        setBudgetSnapshot(snapshot);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn("Failed to load budget snapshot", error);
+        setBudgetSnapshot(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentMonthKey, budgetRefreshId]);
 
   const budgetCategoryIds = useMemo(() => {
     if (!budgetSnapshot) return new Set<string>();
@@ -770,7 +805,7 @@ export default function RulesPage() {
   const rulesWithCategory = useMemo(() => {
     return rules.map((rule) => {
       if (rule.categoryId) {
-        const resolved = categoriesLookup.get(rule.categoryId) ?? null;
+        const resolved = categoriesLookup[rule.categoryId] ?? null;
         if (
           resolved &&
           rule.category &&
@@ -857,6 +892,7 @@ export default function RulesPage() {
             newRule,
             ...prev.filter((item) => item.id !== newRule.id),
           ]);
+          requestBudgetRefresh();
           pushToast({
             title: "Rule created",
             description: state.applyToExisting
@@ -891,6 +927,7 @@ export default function RulesPage() {
               item.id === updatedRule.id ? updatedRule : item
             )
           );
+          requestBudgetRefresh();
           pushToast({
             title: "Rule updated",
             description: state.applyToExisting
@@ -913,7 +950,7 @@ export default function RulesPage() {
         setEditorSubmitting(false);
       }
     },
-    [editorMode, pushToast]
+    [editorMode, pushToast, requestBudgetRefresh]
   );
 
   const handleToggle = useCallback(
@@ -946,6 +983,7 @@ export default function RulesPage() {
         setRules((prev) =>
           prev.map((item) => (item.id === updatedRule.id ? updatedRule : item))
         );
+        requestBudgetRefresh();
         pushToast({
           title: prompt.nextState ? "Rule enabled" : "Rule disabled",
           description: applyToExisting
@@ -967,7 +1005,7 @@ export default function RulesPage() {
         setTogglePrompt(null);
       }
     },
-    [pushToast]
+    [pushToast, requestBudgetRefresh]
   );
 
   const handleDelete = useCallback(async () => {
@@ -983,6 +1021,7 @@ export default function RulesPage() {
       }
 
       setRules((prev) => prev.filter((item) => item.id !== deletePrompt.id));
+      requestBudgetRefresh();
       pushToast({
         title: "Rule deleted",
         description: "Future transactions will no longer use this automation.",
@@ -1001,7 +1040,7 @@ export default function RulesPage() {
       setDeleteSubmitting(false);
       setDeletePrompt(null);
     }
-  }, [deletePrompt, pushToast]);
+  }, [deletePrompt, pushToast, requestBudgetRefresh]);
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
 
@@ -1067,10 +1106,11 @@ export default function RulesPage() {
                 </div>
               </div>
               <Button
-                variant="secondary"
+                variant="tertiary"
                 size="sm"
                 disabled={categories.length === 0}
                 onClick={() => openCreateDialog(category)}
+                iconLeading="➕"
               >
                 Add rule
               </Button>
@@ -1165,7 +1205,8 @@ export default function RulesPage() {
           </div>
           <Button
             onClick={() => openCreateDialog()}
-            disabled={categories.length === 0}
+            disabled={categoriesLoading || categories.length === 0}
+            iconLeading="📏"
           >
             New rule
           </Button>

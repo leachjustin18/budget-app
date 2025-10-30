@@ -1,18 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import TransactionForm from "./TransactionForm";
-import {
-  mapCategoryToOption,
-  mapTransactionToFormState,
-} from "./formHelpers";
+import { mapTransactionToFormState } from "./formHelpers";
 import type {
   ApiTransaction,
   BudgetSnapshot,
   CategoryOption,
   TransactionFormSubmitPayload,
 } from "./types";
-import { useCategoryCache } from "@budget/app/hooks/useCache";
 
 type ManualTransactionFormContainerProps = {
   formKey?: number;
@@ -24,6 +20,8 @@ type ManualTransactionFormContainerProps = {
   onCancel?: () => void;
   showCancel?: boolean;
   onCreateCategory?: () => Promise<CategoryOption | null>;
+  categories: CategoryOption[];
+  categoriesLoading?: boolean;
 };
 
 export function TransactionFormSkeleton() {
@@ -49,28 +47,9 @@ export default function ManualTransactionFormContainer({
   onCancel,
   showCancel,
   onCreateCategory,
+  categories,
+  categoriesLoading = false,
 }: ManualTransactionFormContainerProps) {
-  const { categoriesList, refreshCategories, hasHydrated, isRefreshing } =
-    useCategoryCache();
-
-  const hasRequestedRefresh = useRef(false);
-
-  useEffect(() => {
-    if (hasHydrated || isRefreshing) return;
-    if (hasRequestedRefresh.current) return;
-    hasRequestedRefresh.current = true;
-    void refreshCategories()
-      .catch((error) => {
-        console.warn("Failed to refresh categories for manual transaction form", error);
-        hasRequestedRefresh.current = false;
-      });
-  }, [hasHydrated, isRefreshing, refreshCategories]);
-
-  const categories = useMemo(
-    () => categoriesList.map(mapCategoryToOption),
-    [categoriesList]
-  );
-
   const defaultCategoryId = useMemo(() => {
     if (!categories.length) return "";
     const uncategorized = categories.find(
@@ -85,7 +64,7 @@ export default function ManualTransactionFormContainer({
     return mapTransactionToFormState(transaction, defaultCategoryId);
   }, [transaction, defaultCategoryId]);
 
-  if (!hasHydrated || categories.length === 0) {
+  if (categoriesLoading || categories.length === 0) {
     return <TransactionFormSkeleton />;
   }
 

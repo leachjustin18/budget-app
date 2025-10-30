@@ -1,4 +1,4 @@
-import type { Category } from "@budget/app/providers/CacheProvider";
+import type { Category } from "@budget/lib/types/domain";
 import type {
   ApiTransaction,
   CategoryOption,

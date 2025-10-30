@@ -83,6 +83,10 @@ type MerchantCacheEntry = {
   yelpId: string | null;
 };
 
+type TransactionWithSplits = Prisma.TransactionGetPayload<{
+  include: { splits: true };
+}>;
+
 const tokenize = (value: string): Set<string> => {
   const sanitized = sanitizeMerchantName(value);
   return new Set(
@@ -104,6 +108,15 @@ const tokenSimilarity = (a: Set<string>, b: Set<string>): number => {
   }
   const union = new Set([...a, ...b]);
   return intersection / union.size;
+};
+
+const MANUAL_MATCH_SIMILARITY_THRESHOLD = 0.6;
+
+const getUtcDayBounds = (date: Date) => {
+  const isoDate = date.toISOString().slice(0, 10);
+  const start = new Date(`${isoDate}T00:00:00.000Z`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
 };
 
 const pickYelpCandidate = (
@@ -418,12 +431,16 @@ export async function POST(request: Request) {
 
     const existing = await prisma.transaction.findFirst({
       where: { fingerprint },
-      select: { id: true },
+      select: { id: true, origin: true },
     });
 
+    let manualFingerprintId: string | null = null;
     if (existing) {
-      duplicates += 1;
-      continue;
+      if (existing.origin !== TransactionOrigin.MANUAL) {
+        duplicates += 1;
+        continue;
+      }
+      manualFingerprintId = existing.id;
     }
 
     const categoryFromRule = resolveRuleCategory(rules, {
@@ -432,7 +449,7 @@ export async function POST(request: Request) {
       raw: parsed.raw,
     });
 
-    const categoryId = categoryFromRule ?? defaultCategory.id;
+    const defaultCategoryId = categoryFromRule ?? defaultCategory.id;
 
     const normalizedKey = parsed.normalizedMerchant;
     const resolvedMerchant = normalizedKey
@@ -451,34 +468,157 @@ export async function POST(request: Request) {
             ? resolvedMerchant
             : null;
 
+        const amountDecimal = new Prisma.Decimal(parsed.amount.toFixed(2));
+
+        const importNormalizedKey =
+          normalizedKey ||
+          normalizeMerchantKey(
+            parsed.canonicalMerchant ||
+              parsed.sanitizedMerchant ||
+              parsed.merchant
+          );
+        const importTokens = tokenize(
+          parsed.canonicalMerchant ||
+            parsed.sanitizedMerchant ||
+            parsed.merchant
+        );
+
+        let manualMatch: TransactionWithSplits | null = null;
+
+        if (manualFingerprintId) {
+          manualMatch = await tx.transaction.findUnique({
+            where: { id: manualFingerprintId },
+            include: {
+              splits: {
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          });
+        }
+
+        if (!manualMatch) {
+          const { start: dayStart, end: dayEnd } = getUtcDayBounds(
+            parsed.occurredOn
+          );
+
+          const manualCandidates = (await tx.transaction.findMany({
+            where: {
+              origin: TransactionOrigin.MANUAL,
+              type: parsed.type,
+              amount: amountDecimal,
+              occurredOn: {
+                gte: dayStart,
+                lt: dayEnd,
+              },
+            },
+            include: {
+              splits: {
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          })) as TransactionWithSplits[];
+
+          let bestMatch: TransactionWithSplits | null = null;
+          let bestScore = 0;
+
+          for (const candidate of manualCandidates) {
+            const candidateSource =
+              candidate.merchant && candidate.merchant.trim().length > 0
+                ? candidate.merchant
+                : candidate.description ?? "";
+
+            const candidateNormalized = normalizeMerchantKey(candidateSource);
+
+            let similarityScore = 0;
+            if (importNormalizedKey && candidateNormalized) {
+              if (importNormalizedKey === candidateNormalized) {
+                similarityScore = 1;
+              } else if (
+                importNormalizedKey.includes(candidateNormalized) ||
+                candidateNormalized.includes(importNormalizedKey)
+              ) {
+                similarityScore = 0.9;
+              }
+            }
+
+            if (similarityScore < 1) {
+              const candidateTokens = tokenize(candidateSource);
+              similarityScore = Math.max(
+                similarityScore,
+                tokenSimilarity(importTokens, candidateTokens)
+              );
+            }
+
+            if (
+              similarityScore >= MANUAL_MATCH_SIMILARITY_THRESHOLD &&
+              (bestMatch === null || similarityScore > bestScore)
+            ) {
+              bestMatch = candidate;
+              bestScore = similarityScore;
+            }
+          }
+
+          manualMatch = bestMatch;
+        }
+
+        let splitPayloads: Array<{
+          categoryId: string | null;
+          amount: Prisma.Decimal;
+          memo: string | null;
+        }>;
+
+        if (manualMatch) {
+          splitPayloads = manualMatch.splits.map((split) => ({
+            categoryId: split.categoryId ?? null,
+            amount: new Prisma.Decimal(split.amount.toFixed(2)),
+            memo: split.memo ?? null,
+          }));
+
+          await tx.transaction.delete({ where: { id: manualMatch.id } });
+        } else {
+          splitPayloads = [
+            {
+              categoryId: defaultCategoryId,
+              amount: amountDecimal,
+              memo: null,
+            },
+          ];
+        }
+
         const created = await tx.transaction.create({
           data: {
             id: randomUUID(),
             importBatchId: importBatch.id,
             occurredOn: parsed.occurredOn,
 
-            amount: new Prisma.Decimal(parsed.amount.toFixed(2)),
+            amount: amountDecimal,
             type: parsed.type,
             origin: TransactionOrigin.IMPORT,
             description: parsed.description ? parsed.description.trim() : null,
             merchant: canonicalMerchant ? canonicalMerchant : null,
             merchantId: merchantResolution?.merchantId ?? null,
-            memo: null,
+            memo: manualMatch?.memo ?? null,
             isPending: false,
             externalId: `import:${importBatch.id}:${parsed.index}`,
             fingerprint,
-            categoryId,
+            categoryId:
+              manualMatch?.categoryId ??
+              (splitPayloads.length === 1
+                ? splitPayloads[0].categoryId
+                : null),
           },
         });
 
-        await tx.transactionSplit.create({
-          data: {
-            transactionId: created.id,
-            categoryId,
-            amount: new Prisma.Decimal(parsed.amount.toFixed(2)),
-            memo: null,
-          },
-        });
+        for (const split of splitPayloads) {
+          await tx.transactionSplit.create({
+            data: {
+              transactionId: created.id,
+              categoryId: split.categoryId,
+              amount: split.amount,
+              memo: split.memo,
+            },
+          });
+        }
 
         await linkTransactionToBudget(parsed.occurredOn, created.id, tx);
 

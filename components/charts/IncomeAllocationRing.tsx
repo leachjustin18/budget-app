@@ -113,7 +113,7 @@ export function IncomeAllocationRing({
                 data={data}
                 dataKey="value"
                 nameKey="name"
-                innerRadius="80%"
+                innerRadius="72%"
                 outerRadius="100%"
                 labelLine={false}
                 cornerRadius="50%"

@@ -1,15 +1,35 @@
 # Release Notes
 
-This log captures notable user-facing changes and deployment notes for each production rollout. Add a new section for every GitHub tag/Vercel promotion so we keep a single source of truth for what shipped and how to validate it.
+## v1.0.1 – 2025-10-28
 
-## How to Update
+### Highlights
 
-1. Duplicate the template at the end of this document.
-2. Replace placeholders with version, date, and impact notes.
-3. Link the GitHub pull requests/issues when available.
-4. Keep the newest release at the top of the file.
+- Retired the client cache layer so budgets, rules, and transactions always reflect real-time data without manual refreshes.
+- Dashboard now hydrates from server-provided data instead of a prefilled cache snapshot.
+- Use formatCurrency in EnvelopePlanStackedBars to ensure consistency on the format.
+- Fix issue of import transactions not overrwriting manual ones
+- Address styling issues on mobile
+- Update various button to have icons
 
----
+### Changed
+
+- Replaced the `CacheProvider` context and related hooks with direct API helpers for budgets and categories.
+- Updated budget, rules, and transaction flows to fetch and persist data through the new helpers and local component state.
+- Dashboard charts receive their dataset as props from the server layout.
+- Instead of outputing the raw value in EnvelopePlanStackedBars for the renderCustomizedLabel. It's now passed through the formatCurrency function to ensure correct format.
+- Update the routes to link closer with the data recieved from the import
+
+### Fixed
+
+- Eliminated stale UI states that previously required browser refreshes after edits.
+- Bar chart not being visible on mobile
+- Number on bar chart not being visable
+- Manual transaction being overwritten by import.
+
+### Known Issues / Follow-ups
+
+- Evaluate future offline support separately if it returns to the roadmap.
+- Updating an exsiting rule doesn't save properly
 
 ## v1.0.0 – 2025-10-27
 
@@ -27,51 +47,6 @@ This log captures notable user-facing changes and deployment notes for each prod
 - Dashboard data pipeline with tunable variance/trend thresholds.
 - Service worker integration through `next-pwa`.
 
-### Technical Notes
-
-- Requires Node.js 20+ runtime (Vercel defaults to 20) and PostgreSQL.
-- `pnpm build` runs `prisma migrate deploy && next build`; ensure `DATABASE_URL` is set for builds.
-- Yelp autocomplete is optional but improves merchant normalization (`YELP_API_KEY`).
-- Tests compile to `.tmp/tests` before execution; CI should clean up via `pnpm test:clean`.
-
-### QA Checklist
-
-- ✅ Sign-in with Google and redirect to the dashboard.
-- ✅ Import a CSV sample, resolve merchants, and verify normalized transactions.
-- ✅ Confirm dashboard charts render with seeded data (forecast, trends, calendar, merchant ring).
-- ✅ Offline check: load the dashboard, go offline, and ensure cached summary renders.
-
 ### Known Issues / Follow-ups
 
-- Service worker cache should be cleared manually if Prisma schema changes.
-- Yelp API quotas may throttle autocomplete in high-volume imports (monitor logs).
-- No automated seeding script ships yet; add one before wider onboarding.
-
----
-
-## Template
-
-```
-## vX.Y.Z – YYYY-MM-DD
-
-### Highlights
-- ...
-
-### Added
-- ...
-
-### Changed
-- ...
-
-### Fixed
-- ...
-
-### Technical Notes
-- ...
-
-### QA Checklist
-- [ ] ...
-
-### Known Issues / Follow-ups
-- ...
-```
+- Updating an exsiting rule doesn't save properly

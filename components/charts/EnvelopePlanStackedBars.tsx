@@ -1,5 +1,6 @@
 "use client";
 
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -19,6 +20,7 @@ import type {
 } from "recharts/types/component/DefaultTooltipContent";
 import type { DashboardData } from "@budget/app/(protected)/dashboard/data";
 import { formatCurrency, formatPercent } from "./formatters";
+import { toNumber as toNumberHelper } from "@budget/lib/helpers";
 
 type CategoryEntry = DashboardData["categoryPlanActual"]["categories"][number];
 
@@ -43,14 +45,43 @@ type CustomTooltipProps = {
   label?: string | number;
 };
 
+// ── Hook utilities ───────────────────────────────────────────────
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia(query);
+    const listener = (e: MediaQueryListEvent) => setMatches(e.matches);
+    mql.addEventListener("change", listener);
+    return () => mql.removeEventListener("change", listener);
+  }, [query]);
+
+  return matches;
+}
+
+function measureMaxLabelPx(labels: string[], font = "12px sans-serif") {
+  if (typeof document === "undefined") return 0;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 0;
+  ctx.font = font;
+  const padding = 24;
+  return Math.ceil(
+    Math.max(0, ...labels.map((t) => ctx.measureText(t).width)) + padding
+  );
+}
+
+// ── Tooltip and label renderers ──────────────────────────────────
+
 const renderCustomizedLabel = (props: LabelProps) => {
   const { x, y, width, value } = props;
-
-  if (x == null || y == null || width == null) {
-    return null;
-  }
+  if (x == null || y == null || width == null) return null;
   const radius = 13;
-
   return (
     <g>
       <text
@@ -60,7 +91,7 @@ const renderCustomizedLabel = (props: LabelProps) => {
         textAnchor="middle"
         dominantBaseline="middle"
       >
-        ${value}
+        {formatCurrency(toNumberHelper(value))}
       </text>
     </g>
   );
@@ -83,10 +114,12 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   const spentValue = toNumber(spentEntry?.value);
   const remainingValue = Math.abs(toNumber(remainingEntry?.value));
   const overspentValue = toNumber(overspentEntry?.value);
+
   const source =
     payload[0]?.payload && typeof payload[0]?.payload === "object"
       ? (payload[0]?.payload as ChartDatum)
       : null;
+
   const plannedValue = source?.planned ?? spentValue + remainingValue;
 
   return (
@@ -104,37 +137,62 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   );
 };
 
+// ── Main component ───────────────────────────────────────────────
+
 export function EnvelopePlanStackedBars({
   categories,
   limit = 6,
 }: EnvelopePlanStackedBarsProps) {
-  const expenseCategories = categories.filter(
-    (category) => category.section === "expenses"
+  const isMobile = useMediaQuery("(max-width: 640px)");
+
+  // All hook calls above the conditional return
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.section === "expenses"),
+    [categories]
   );
 
-  const topCategories = expenseCategories
-    .filter((category) => (category.planned ?? 0) > 0)
-    .sort((a, b) => (b.planned ?? 0) - (a.planned ?? 0))
-    .slice(0, limit);
+  const topCategories = useMemo(
+    () =>
+      expenseCategories
+        .filter((category) => (category.planned ?? 0) > 0)
+        .sort((a, b) => (b.planned ?? 0) - (a.planned ?? 0))
+        .slice(0, limit),
+    [expenseCategories, limit]
+  );
 
-  const data: ChartDatum[] = topCategories.map((category) => {
-    const planned = Math.max(0, category.planned ?? 0);
-    const spent = Math.max(0, category.actual);
-    const spentWithinPlan = Math.min(planned, spent);
-    const remaining = Math.max(0, planned - spentWithinPlan);
-    const overspent = Math.max(0, spent - planned);
+  const data: ChartDatum[] = useMemo(
+    () =>
+      topCategories.map((category) => {
+        const planned = Math.max(0, category.planned ?? 0);
+        const spent = Math.max(0, category.actual);
+        const spentWithinPlan = Math.min(planned, spent);
+        const remaining = Math.max(0, planned - spentWithinPlan);
+        const overspent = Math.max(0, spent - planned);
 
-    return {
-      categoryId: category.categoryId,
-      label: `${category.emoji ?? ""} ${category.name}`,
-      planned,
-      spentWithinPlan,
-      remaining,
-      remainingNegative: remaining > 0 ? -remaining : 0,
-      overspent,
-    };
-  });
+        return {
+          categoryId: category.categoryId,
+          label: `${category.emoji ?? ""} ${category.name}`,
+          planned,
+          spentWithinPlan,
+          remaining,
+          remainingNegative: remaining > 0 ? -remaining : 0,
+          overspent,
+        };
+      }),
+    [topCategories]
+  );
 
+  const yAxisWidth = useMemo(() => {
+    const maxPx = measureMaxLabelPx(
+      data.map((d) => d.label),
+      "12px sans-serif"
+    );
+    const cap = isMobile ? 140 : 260;
+    const fallback = isMobile ? 110 : 200;
+    return Math.max(80, Math.min(maxPx || fallback, cap));
+  }, [data, isMobile]);
+
+  // now safe to early return (no hook calls below)
   if (data.length === 0) {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-emerald-900/20 bg-white/60 p-4 text-sm text-emerald-900/70 dark:border-emerald-100/30 dark:bg-emerald-900/40 dark:text-emerald-100/70">
@@ -154,9 +212,8 @@ export function EnvelopePlanStackedBars({
           <BarChart
             data={data}
             layout="vertical"
-            stackOffset="sign"
-            margin={{ top: 16, right: 32, bottom: 16, left: 24 }}
-            barCategoryGap="40%"
+            margin={{ top: 16, bottom: 16, left: 8, right: 8 }}
+            barCategoryGap={isMobile ? "20%" : "40%"}
           >
             <CartesianGrid
               strokeDasharray="4 4"
@@ -174,8 +231,11 @@ export function EnvelopePlanStackedBars({
             <YAxis
               type="category"
               dataKey="label"
-              width={260}
-              tick={{ fontSize: 12, fill: "rgba(15,118,110,0.9)" }}
+              width={yAxisWidth}
+              tick={{
+                fontSize: isMobile ? 11 : 12,
+                fill: "rgba(15,118,110,0.9)",
+              }}
               axisLine={false}
               tickLine={false}
             />
@@ -207,7 +267,6 @@ export function EnvelopePlanStackedBars({
             >
               <LabelList dataKey="remaining" content={renderCustomizedLabel} />
             </Bar>
-
             <Bar
               dataKey="spentWithinPlan"
               name="Spent"

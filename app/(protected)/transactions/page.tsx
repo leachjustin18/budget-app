@@ -16,19 +16,20 @@ import ManualTransactionFormContainer from "./ManualTransactionFormContainer";
 import { mapCategoryToOption } from "./formHelpers";
 import type {
   ApiTransaction,
-  BudgetSnapshot,
+  BudgetSnapshot as BudgetTotals,
   CategoryOption,
   TransactionFormSubmitPayload,
   TransactionOrigin,
 } from "./types";
 import { getMonthKey, parseMonthKey } from "@budget/lib/transactions";
 import Modal from "@budget/components/Modal";
-import {
-  useCache,
-  useBudgetByMonth,
-  useCategoryCache,
-} from "@budget/app/hooks/useCache";
-import type { CategorySection } from "@budget/app/providers/CacheProvider";
+import { createCategory, fetchCategories } from "@budget/lib/api/categories";
+import { fetchBudgetSnapshot } from "@budget/lib/api/budgets";
+import type {
+  BudgetSnapshot as BudgetSnapshotData,
+  Category,
+  CategorySection,
+} from "@budget/lib/types/domain";
 
 type ImportSummary = {
   imported: number;
@@ -84,7 +85,6 @@ const formatTransactionOrigin = (origin: TransactionOrigin) => {
 };
 
 export default function TransactionsPage() {
-  const { actions } = useCache();
   const [month, setMonth] = useState(() => getMonthKey(new Date()));
   const [transactions, setTransactions] = useState<ApiTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,28 +132,10 @@ export default function TransactionsPage() {
   >([]);
   const [isResolutionModalOpen, setIsResolutionModalOpen] = useState(false);
   const [isResolvingMerchant, setIsResolvingMerchant] = useState(false);
-
-  const {
-    categoriesList: categoryRecords,
-    refreshCategories,
-    hasHydrated: categoriesHydrated,
-    isRefreshing: categoriesRefreshing,
-  } = useCategoryCache();
-  const hasRequestedCategoryRefresh = useRef(false);
-  const categories = useMemo(
-    () => categoryRecords.map(mapCategoryToOption),
-    [categoryRecords]
-  );
-
-  useEffect(() => {
-    if (categoriesHydrated || categoriesRefreshing) return;
-    if (hasRequestedCategoryRefresh.current) return;
-    hasRequestedCategoryRefresh.current = true;
-    void refreshCategories().catch((error) => {
-      console.warn("Failed to refresh categories", error);
-      hasRequestedCategoryRefresh.current = false;
-    });
-  }, [categoriesHydrated, categoriesRefreshing, refreshCategories]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [budgetSnapshot, setBudgetSnapshot] =
+    useState<BudgetSnapshotData | null>(null);
 
   useEffect(() => {
     if (merchantResolutionQueue.length === 0) {
@@ -161,23 +143,13 @@ export default function TransactionsPage() {
     }
   }, [merchantResolutionQueue]);
 
-  const ensuredBudgetMonths = useRef<Set<string>>(new Set());
-  const ensureBudget = actions.budgets.ensure;
-  const categoryActions = actions.categories;
-  const budgetSnapshot = useBudgetByMonth(month);
-
-  useEffect(() => {
-    if (budgetSnapshot) return;
-    if (ensuredBudgetMonths.current.has(month)) return;
-    ensuredBudgetMonths.current.add(month);
-    void ensureBudget(month).catch((error) => {
-      console.warn("Failed to ensure budget snapshot", error);
-      ensuredBudgetMonths.current.delete(month);
-    });
-  }, [budgetSnapshot, ensureBudget, month]);
+  const categoryOptions = useMemo(
+    () => categories.map(mapCategoryToOption),
+    [categories]
+  );
 
   const budgetByCategory = useMemo(() => {
-    const snapshot: BudgetSnapshot = {};
+    const snapshot: BudgetTotals = {};
     if (!budgetSnapshot) return snapshot;
     for (const sectionEntries of Object.values(budgetSnapshot.sections)) {
       for (const allocation of sectionEntries) {
@@ -201,6 +173,59 @@ export default function TransactionsPage() {
     },
     []
   );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCategoriesLoading(true);
+    fetchCategories(controller.signal)
+      .then((list) => {
+        if (controller.signal.aborted) return;
+        setCategories(list);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.warn("Failed to load categories", error);
+        pushToast({
+          title: "Couldn’t load categories",
+          description:
+            error instanceof Error ? error.message : "Unexpected error",
+          variant: "danger",
+        });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCategoriesLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [pushToast]);
+
+  useEffect(() => {
+    let active = true;
+    fetchBudgetSnapshot(month)
+      .then((snapshot) => {
+        if (!active) return;
+        setBudgetSnapshot(snapshot);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn("Failed to load budget snapshot", error);
+        setBudgetSnapshot(null);
+        pushToast({
+          title: "Budget overview unavailable",
+          description:
+            error instanceof Error ? error.message : "Unexpected error",
+          variant: "warning",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [month, pushToast]);
 
   const fetchTransactions = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -593,9 +618,30 @@ export default function TransactionsPage() {
 
     setCategorySaving(true);
     try {
-      const createdCategory = await categoryActions.create({
+      const createdCategory = await createCategory({
         name: categoryForm.name.trim(),
         section: categoryForm.section as CategorySection,
+      });
+
+      setCategories((prev) => {
+        const next = [...prev, createdCategory];
+        return next.sort((a, b) => {
+          if (a.section !== b.section) {
+            const order: Record<CategorySection, number> = {
+              EXPENSES: 0,
+              RECURRING: 1,
+              SAVINGS: 2,
+              DEBT: 3,
+            };
+            return order[a.section] - order[b.section];
+          }
+          if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
+            return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          }
+          return a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+        });
       });
 
       const created = mapCategoryToOption(createdCategory);
@@ -619,7 +665,7 @@ export default function TransactionsPage() {
     } finally {
       setCategorySaving(false);
     }
-  }, [categoryActions, categoryForm, pushToast]);
+  }, [categoryForm, pushToast]);
 
   const handleTransactionEdit = useCallback((transaction: ApiTransaction) => {
     setEditingTransaction(transaction);
@@ -741,13 +787,14 @@ export default function TransactionsPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => setIsCreateModalOpen(true)}>
+            <Button onClick={() => setIsCreateModalOpen(true)} iconLeading="✍️">
               Add manual transaction
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="tertiary"
               onClick={() => setIsImportModalOpen(true)}
+              iconLeading="📥"
             >
               Import CSV
             </Button>
@@ -884,7 +931,8 @@ export default function TransactionsPage() {
                     <Button
                       type="button"
                       size="sm"
-                      variant="ghost"
+                      variant="tertiary"
+                      iconLeading="📝"
                       onClick={() => handleTransactionEdit(transaction)}
                     >
                       Edit
@@ -1000,6 +1048,8 @@ export default function TransactionsPage() {
             setCreateFormKey((prev) => prev + 1);
           }}
           onCreateCategory={requestCategoryCreation}
+          categories={categoryOptions}
+          categoriesLoading={categoriesLoading}
         />
       </Modal>
 
@@ -1140,6 +1190,8 @@ export default function TransactionsPage() {
             showCancel
             onCancel={() => setEditingTransaction(null)}
             onCreateCategory={requestCategoryCreation}
+            categories={categoryOptions}
+            categoriesLoading={categoriesLoading}
           />
         ) : null}
       </Modal>
